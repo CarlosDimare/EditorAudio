@@ -1,29 +1,30 @@
-import logging
+import os
 from telegram.ext import Updater, MessageHandler, Filters
 from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
 
-logging.basicConfig(level=logging.INFO)
-TOKEN = "8042413022:AAFtd472E_WhPhmZlfKRug3a4Mhj5xkRis4"
+# Variables de entorno (tu token Telegram y HF)
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")  # tu token de bot Telegram
+HF_TOKEN = os.getenv("HF_TOKEN")  # tu token Hugging Face
 
-tokenizer = AutoTokenizer.from_pretrained("./modelo")
-model = AutoModelForCausalLM.from_pretrained("./modelo")
+# Cargá tokenizer y modelo desde HF con autenticación
+model_name = "carlosdimare/clascon"  # reemplazá con tu repo HF
+
+tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=HF_TOKEN)
+model = AutoModelForCausalLM.from_pretrained(model_name, use_auth_token=HF_TOKEN)
 
 def responder(update, context):
-    entrada = update.message.text
-    input_ids = tokenizer.encode(entrada, return_tensors="pt")
+    prompt = update.message.text
+    inputs = tokenizer(prompt, return_tensors="pt")
+    outputs = model.generate(**inputs, max_length=150)
+    texto_generado = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    update.message.reply_text(texto_generado)
 
-    with torch.no_grad():
-        output = model.generate(input_ids, max_length=80, do_sample=True)
-    texto = tokenizer.decode(output[0], skip_special_tokens=True)
-
-    update.message.reply_text(texto)
-
-if __name__ == "__main__":
-    updater = Updater(TOKEN, use_context=True)
+def main():
+    updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
-
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, responder))
-
     updater.start_polling()
     updater.idle()
+
+if __name__ == "__main__":
+    main()
