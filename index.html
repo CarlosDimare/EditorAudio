@@ -3,50 +3,80 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Transmisión P2P básica cámara + audio</title>
+<title>Transmisión P2P cámara + audio - señal simplificada</title>
 <style>
-  body { font-family: Arial, sans-serif; background: #111; color: #eee; text-align: center; margin: 0; padding: 1em; }
-  video { max-width: 90vw; max-height: 70vh; background: black; border: 2px solid #44ff44; }
-  button { font-size: 1.2em; margin: 0.5em; padding: 0.5em 1em; background: #44ff44; color: #111; border: none; border-radius: 5px; cursor: pointer; }
-  #link { margin-top: 1em; word-break: break-all; color: #4aff4a; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #111;
+    color: #eee;
+    text-align: center;
+    margin: 0;
+    padding: 1em;
+  }
+  video {
+    max-width: 90vw;
+    max-height: 70vh;
+    background: black;
+    border: 2px solid #44ff44;
+  }
+  button {
+    font-size: 1.2em;
+    margin: 0.5em;
+    padding: 0.5em 1em;
+    background: #44ff44;
+    color: #111;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  #signal {
+    width: 90vw;
+    height: 100px;
+    margin-top: 1em;
+    background: #222;
+    color: #4aff4a;
+    border: 2px solid #44ff44;
+    padding: 0.5em;
+    font-family: monospace;
+    overflow-wrap: break-word;
+    resize: none;
+  }
 </style>
 </head>
 <body>
 <h1>Transmisión P2P cámara + audio</h1>
 <video id="video" autoplay playsinline></video><br/>
 <button id="startBtn">Iniciar transmisión</button>
-<button id="connectBtn" disabled>Conectar a transmisión</button>
-<div id="link"></div>
+<button id="connectBtn" disabled>Conectar a transmisión</button><br/>
+<textarea id="signal" readonly placeholder="Aquí aparecerá la señal SDP..."></textarea><br/>
+<button id="copyBtn" disabled>Copiar señal</button>
 
 <script>
 (async () => {
   const video = document.getElementById('video');
   const startBtn = document.getElementById('startBtn');
   const connectBtn = document.getElementById('connectBtn');
-  const linkDiv = document.getElementById('link');
+  const signalTextarea = document.getElementById('signal');
+  const copyBtn = document.getElementById('copyBtn');
 
-  // Variables WebRTC
   let localStream;
   let pc;
   let isCaller = false;
 
-  // Configuración ICE servers públicos
   const configuration = {
     iceServers: [
-      { urls: "stun:stun.l.google.com:19302" },
-      // TURN server recomendado si fuera necesario (se puede agregar)
+      { urls: "stun:stun.l.google.com:19302" }
     ]
   };
 
-  // Función para crear conexión WebRTC
   function createPeerConnection() {
     pc = new RTCPeerConnection(configuration);
 
     pc.onicecandidate = event => {
       if (event.candidate) return;
-      // ICE completo, mostramos señalización
       const localDesc = JSON.stringify(pc.localDescription);
-      linkDiv.innerText = localDesc;
+      signalTextarea.value = localDesc;
+      copyBtn.disabled = false;
     };
 
     pc.ontrack = event => {
@@ -54,7 +84,6 @@
     };
   }
 
-  // Emisor: iniciar streaming
   startBtn.onclick = async () => {
     startBtn.disabled = true;
     isCaller = true;
@@ -67,17 +96,15 @@
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      // El ICEcandidate onicecandidate se encargará de mostrar la señalización
     } catch (e) {
       alert('Error accediendo a cámara/micrófono o creando conexión:\n' + e);
       startBtn.disabled = false;
     }
   };
 
-  // Receptor: conectar a transmisión
   connectBtn.onclick = async () => {
     try {
-      const remoteDescStr = prompt('Pega aquí la señal del emisor (oferta SDP):');
+      const remoteDescStr = prompt('Pega aquí la señal SDP del emisor:');
       if (!remoteDescStr) return alert('Señal vacía');
 
       createPeerConnection();
@@ -87,22 +114,33 @@
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      linkDiv.innerText = JSON.stringify(pc.localDescription);
+      signalTextarea.value = JSON.stringify(pc.localDescription);
+      copyBtn.disabled = false;
 
       pc.onicecandidate = event => {
         if (event.candidate) return;
-        alert('Copiá esta señal y mandásela al emisor:\n' + JSON.stringify(pc.localDescription));
+        alert('Copiá esta señal y envíasela al emisor:\n' + JSON.stringify(pc.localDescription));
       };
     } catch (e) {
       alert('Error conectando a la transmisión:\n' + e);
     }
   };
 
-  // Cuando el emisor ya generó la señal, habilitamos botón para conectar
-  const observer = new MutationObserver(() => {
-    if (linkDiv.innerText.length > 100) connectBtn.disabled = false;
+  signalTextarea.addEventListener('focus', () => {
+    signalTextarea.select();
   });
-  observer.observe(linkDiv, { childList: true });
+
+  copyBtn.onclick = () => {
+    signalTextarea.select();
+    document.execCommand('copy');
+    alert('Señal copiada al portapapeles');
+  };
+
+  const observer = new MutationObserver(() => {
+    if (signalTextarea.value.length > 100) connectBtn.disabled = false;
+  });
+  observer.observe(signalTextarea, { characterData: true, subtree: true, childList: true });
+
 })();
 </script>
 </body>
