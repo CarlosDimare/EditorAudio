@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Transmisión P2P básica cámara + audio</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #111; color: #eee; text-align: center; margin: 0; padding: 1em; }
+  video { max-width: 90vw; max-height: 70vh; background: black; border: 2px solid #44ff44; }
+  button { font-size: 1.2em; margin: 0.5em; padding: 0.5em 1em; background: #44ff44; color: #111; border: none; border-radius: 5px; cursor: pointer; }
+  #link { margin-top: 1em; word-break: break-all; color: #4aff4a; }
+</style>
+</head>
+<body>
+<h1>Transmisión P2P cámara + audio</h1>
+<video id="video" autoplay playsinline></video><br/>
+<button id="startBtn">Iniciar transmisión</button>
+<button id="connectBtn" disabled>Conectar a transmisión</button>
+<div id="link"></div>
+
+<script>
+(async () => {
+  const video = document.getElementById('video');
+  const startBtn = document.getElementById('startBtn');
+  const connectBtn = document.getElementById('connectBtn');
+  const linkDiv = document.getElementById('link');
+
+  // Variables WebRTC
+  let localStream;
+  let pc;
+  let isCaller = false;
+
+  // Configuración ICE servers públicos
+  const configuration = {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      // TURN server recomendado si fuera necesario (se puede agregar)
+    ]
+  };
+
+  // Función para crear conexión WebRTC
+  function createPeerConnection() {
+    pc = new RTCPeerConnection(configuration);
+
+    pc.onicecandidate = event => {
+      if (event.candidate) return;
+      // ICE completo, mostramos señalización
+      const localDesc = JSON.stringify(pc.localDescription);
+      linkDiv.innerText = localDesc;
+    };
+
+    pc.ontrack = event => {
+      video.srcObject = event.streams[0];
+    };
+  }
+
+  // Emisor: iniciar streaming
+  startBtn.onclick = async () => {
+    startBtn.disabled = true;
+    isCaller = true;
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      video.srcObject = localStream;
+
+      createPeerConnection();
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      // El ICEcandidate onicecandidate se encargará de mostrar la señalización
+    } catch (e) {
+      alert('Error accediendo a cámara/micrófono o creando conexión:\n' + e);
+      startBtn.disabled = false;
+    }
+  };
+
+  // Receptor: conectar a transmisión
+  connectBtn.onclick = async () => {
+    try {
+      const remoteDescStr = prompt('Pega aquí la señal del emisor (oferta SDP):');
+      if (!remoteDescStr) return alert('Señal vacía');
+
+      createPeerConnection();
+      const remoteDesc = new RTCSessionDescription(JSON.parse(remoteDescStr));
+      await pc.setRemoteDescription(remoteDesc);
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      linkDiv.innerText = JSON.stringify(pc.localDescription);
+
+      pc.onicecandidate = event => {
+        if (event.candidate) return;
+        alert('Copiá esta señal y mandásela al emisor:\n' + JSON.stringify(pc.localDescription));
+      };
+    } catch (e) {
+      alert('Error conectando a la transmisión:\n' + e);
+    }
+  };
+
+  // Cuando el emisor ya generó la señal, habilitamos botón para conectar
+  const observer = new MutationObserver(() => {
+    if (linkDiv.innerText.length > 100) connectBtn.disabled = false;
+  });
+  observer.observe(linkDiv, { childList: true });
+})();
+</script>
+</body>
+</html>
