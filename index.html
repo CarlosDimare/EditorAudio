@@ -61,7 +61,6 @@
 
   let localStream;
   let pc;
-  let isCaller = false;
 
   const configuration = {
     iceServers: [
@@ -77,6 +76,7 @@
       const localDesc = JSON.stringify(pc.localDescription);
       signalTextarea.value = localDesc;
       copyBtn.disabled = false;
+      connectBtn.disabled = false;
     };
 
     pc.ontrack = event => {
@@ -86,7 +86,6 @@
 
   startBtn.onclick = async () => {
     startBtn.disabled = true;
-    isCaller = true;
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       video.srcObject = localStream;
@@ -116,19 +115,10 @@
 
       signalTextarea.value = JSON.stringify(pc.localDescription);
       copyBtn.disabled = false;
-
-      pc.onicecandidate = event => {
-        if (event.candidate) return;
-        alert('Copiá esta señal y envíasela al emisor:\n' + JSON.stringify(pc.localDescription));
-      };
     } catch (e) {
       alert('Error conectando a la transmisión:\n' + e);
     }
   };
-
-  signalTextarea.addEventListener('focus', () => {
-    signalTextarea.select();
-  });
 
   copyBtn.onclick = () => {
     signalTextarea.select();
@@ -136,10 +126,9 @@
     alert('Señal copiada al portapapeles');
   };
 
-  const observer = new MutationObserver(() => {
-    if (signalTextarea.value.length > 100) connectBtn.disabled = false;
-  });
-  observer.observe(signalTextarea, { characterData: true, subtree: true, childList: true });
+  // Inicialmente botones conectar y copiar deshabilitados
+  connectBtn.disabled = true;
+  copyBtn.disabled = true;
 
 })();
 </script>
