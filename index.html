@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Transmisión P2P cámara + audio - link con señal</title>
+<title>WebRTC + WebSocket señalización automática</title>
 <style>
   body {
     font-family: Arial, sans-serif;
@@ -29,50 +29,36 @@
     border-radius: 5px;
     cursor: pointer;
   }
-  #signalLink {
-    display: block;
+  #status {
     margin-top: 1em;
-    padding: 0.5em;
-    background: #222;
+    font-family: monospace;
     color: #4aff4a;
-    border: 2px solid #44ff44;
-    word-break: break-all;
-    user-select: all;
   }
 </style>
 </head>
 <body>
-<h1>Transmisión P2P cámara + audio</h1>
+<h1>WebRTC + WebSocket señalización automática</h1>
 <video id="video" autoplay playsinline></video><br/>
 <button id="startBtn">Iniciar transmisión</button>
-<button id="connectBtn" disabled>Conectar a transmisión</button><br/>
-<a id="signalLink" href="#" target="_blank" title="Link para compartir la señal SDP"></a>
+
+<div id="status">Estado: desconectado</div>
 
 <script>
 (async () => {
   const video = document.getElementById('video');
   const startBtn = document.getElementById('startBtn');
-  const connectBtn = document.getElementById('connectBtn');
-  const signalLink = document.getElementById('signalLink');
-
-  let localStream;
-  let pc;
+  const status = document.getElementById('status');
 
   const configuration = {
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" }
-    ]
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
   };
 
-  // Codificar y decodificar base64 URL safe
-  function encodeSignal(signal) {
-    return btoa(unescape(encodeURIComponent(signal)))
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
-  function decodeSignal(encoded) {
-    encoded = encoded.replace(/-/g, '+').replace(/_/g, '/');
-    while (encoded.length % 4) encoded += '=';
-    return decodeURIComponent(escape(atob(encoded)));
+  let pc;
+  let localStream;
+  let ws;
+
+  function logStatus(text) {
+    status.textContent = 'Estado: ' + text;
   }
 
   function createPeerConnection() {
@@ -81,20 +67,61 @@
     pc.onicecandidate = event => {
       if (event.candidate) return;
       const localDesc = JSON.stringify(pc.localDescription);
-      const encoded = encodeSignal(localDesc);
-      const url = `${window.location.origin}${window.location.pathname}?signal=${encoded}`;
-      signalLink.href = url;
-      signalLink.textContent = url;
-      connectBtn.disabled = false;
+      ws.send(localDesc);
+      logStatus('Enviando señal SDP');
     };
 
     pc.ontrack = event => {
       video.srcObject = event.streams[0];
+      logStatus('Recibiendo video');
+    };
+  }
+
+  function setupWebSocket() {
+    // Cambiá la IP y puerto por la IP pública o local accesible de tu PC
+    ws = new WebSocket('ws://123.45.67.89:8080');
+
+    ws.onopen = () => {
+      logStatus('WebSocket conectado');
+    };
+
+    ws.onmessage = async (event) => {
+      const msg = JSON.parse(event.data);
+      if (!pc) createPeerConnection();
+
+      if (msg.type === 'offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(msg));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify(pc.localDescription));
+        logStatus('Respuesta enviada');
+      } else if (msg.type === 'answer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(msg));
+        logStatus('Conexión establecida');
+      } else if (msg.candidate) {
+        try {
+          await pc.addIceCandidate(msg);
+          logStatus('Candidato ICE agregado');
+        } catch (e) {
+          console.error('Error agregando ICE candidate:', e);
+        }
+      }
+    };
+
+    ws.onerror = (e) => {
+      console.error('WebSocket error:', e);
+      logStatus('Error WebSocket');
+    };
+
+    ws.onclose = () => {
+      logStatus('WebSocket desconectado');
     };
   }
 
   startBtn.onclick = async () => {
     startBtn.disabled = true;
+    setupWebSocket();
+
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       video.srcObject = localStream;
@@ -104,48 +131,14 @@
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+
+      ws.send(JSON.stringify(pc.localDescription));
+      logStatus('Oferta enviada');
     } catch (e) {
       alert('Error accediendo a cámara/micrófono o creando conexión:\n' + e);
       startBtn.disabled = false;
     }
   };
-
-  connectBtn.onclick = async () => {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      let remoteDescStr = urlParams.get('signal');
-
-      if (!remoteDescStr) {
-        remoteDescStr = prompt('Pega aquí la señal SDP del emisor:');
-        if (!remoteDescStr) return alert('Señal vacía');
-        remoteDescStr = decodeSignal(remoteDescStr);
-      } else {
-        remoteDescStr = decodeSignal(remoteDescStr);
-      }
-
-      createPeerConnection();
-      const remoteDesc = new RTCSessionDescription(JSON.parse(remoteDescStr));
-      await pc.setRemoteDescription(remoteDesc);
-
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      alert('Transmisión conectada. Ahora debes enviar esta respuesta al emisor para completar la conexión.');
-
-    } catch (e) {
-      alert('Error conectando a la transmisión:\n' + e);
-    }
-  };
-
-  // Al cargar la página, si hay señal en URL, habilitamos el botón conectar
-  window.onload = () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('signal')) {
-      connectBtn.disabled = false;
-    }
-  };
-
-  connectBtn.disabled = true;
 })();
 </script>
 </body>
