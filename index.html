@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Transmisión P2P cámara + audio - señal simplificada</title>
+<title>Transmisión P2P cámara + audio - link con señal</title>
 <style>
   body {
     font-family: Arial, sans-serif;
@@ -29,17 +29,15 @@
     border-radius: 5px;
     cursor: pointer;
   }
-  #signal {
-    width: 90vw;
-    height: 100px;
+  #signalLink {
+    display: block;
     margin-top: 1em;
+    padding: 0.5em;
     background: #222;
     color: #4aff4a;
     border: 2px solid #44ff44;
-    padding: 0.5em;
-    font-family: monospace;
-    overflow-wrap: break-word;
-    resize: none;
+    word-break: break-all;
+    user-select: all;
   }
 </style>
 </head>
@@ -48,16 +46,14 @@
 <video id="video" autoplay playsinline></video><br/>
 <button id="startBtn">Iniciar transmisión</button>
 <button id="connectBtn" disabled>Conectar a transmisión</button><br/>
-<textarea id="signal" readonly placeholder="Aquí aparecerá la señal SDP..."></textarea><br/>
-<button id="copyBtn" disabled>Copiar señal</button>
+<a id="signalLink" href="#" target="_blank" title="Link para compartir la señal SDP"></a>
 
 <script>
 (async () => {
   const video = document.getElementById('video');
   const startBtn = document.getElementById('startBtn');
   const connectBtn = document.getElementById('connectBtn');
-  const signalTextarea = document.getElementById('signal');
-  const copyBtn = document.getElementById('copyBtn');
+  const signalLink = document.getElementById('signalLink');
 
   let localStream;
   let pc;
@@ -68,14 +64,27 @@
     ]
   };
 
+  // Codificar y decodificar base64 URL safe
+  function encodeSignal(signal) {
+    return btoa(unescape(encodeURIComponent(signal)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function decodeSignal(encoded) {
+    encoded = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    while (encoded.length % 4) encoded += '=';
+    return decodeURIComponent(escape(atob(encoded)));
+  }
+
   function createPeerConnection() {
     pc = new RTCPeerConnection(configuration);
 
     pc.onicecandidate = event => {
       if (event.candidate) return;
       const localDesc = JSON.stringify(pc.localDescription);
-      signalTextarea.value = localDesc;
-      copyBtn.disabled = false;
+      const encoded = encodeSignal(localDesc);
+      const url = `${window.location.origin}${window.location.pathname}?signal=${encoded}`;
+      signalLink.href = url;
+      signalLink.textContent = url;
       connectBtn.disabled = false;
     };
 
@@ -103,8 +112,16 @@
 
   connectBtn.onclick = async () => {
     try {
-      const remoteDescStr = prompt('Pega aquí la señal SDP del emisor:');
-      if (!remoteDescStr) return alert('Señal vacía');
+      const urlParams = new URLSearchParams(window.location.search);
+      let remoteDescStr = urlParams.get('signal');
+
+      if (!remoteDescStr) {
+        remoteDescStr = prompt('Pega aquí la señal SDP del emisor:');
+        if (!remoteDescStr) return alert('Señal vacía');
+        remoteDescStr = decodeSignal(remoteDescStr);
+      } else {
+        remoteDescStr = decodeSignal(remoteDescStr);
+      }
 
       createPeerConnection();
       const remoteDesc = new RTCSessionDescription(JSON.parse(remoteDescStr));
@@ -113,23 +130,22 @@
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      signalTextarea.value = JSON.stringify(pc.localDescription);
-      copyBtn.disabled = false;
+      alert('Transmisión conectada. Ahora debes enviar esta respuesta al emisor para completar la conexión.');
+
     } catch (e) {
       alert('Error conectando a la transmisión:\n' + e);
     }
   };
 
-  copyBtn.onclick = () => {
-    signalTextarea.select();
-    document.execCommand('copy');
-    alert('Señal copiada al portapapeles');
+  // Al cargar la página, si hay señal en URL, habilitamos el botón conectar
+  window.onload = () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('signal')) {
+      connectBtn.disabled = false;
+    }
   };
 
-  // Inicialmente botones conectar y copiar deshabilitados
   connectBtn.disabled = true;
-  copyBtn.disabled = true;
-
 })();
 </script>
 </body>
