@@ -501,7 +501,8 @@
     }
 
     ctx2d.closePath();
-    ctx2d.fillStyle = fillColor;
+    // Draw the waveform in white/light grey
+    ctx2d.fillStyle = 'rgba(255,255,255, 0.7)'; // White with some transparency
     ctx2d.fill();
 
     // Draw fade effects
@@ -1161,7 +1162,8 @@
       return;
     }
 
-    const offlineCtx = new OfflineAudioContext(audioCtx.numberOfChannels, totalDuration * audioCtx.sampleRate, audioCtx.sampleRate);
+    // Initialize OfflineAudioContext with 2 channels (stereo)
+    const offlineCtx = new OfflineAudioContext(2, totalDuration * audioCtx.sampleRate, audioCtx.sampleRate);
 
     trackLanes.forEach(lane => {
       lane.clips.forEach(clip => {
@@ -1231,7 +1233,10 @@
    */
   function audioBufferToWav(buffer) {
     const numOfChan = buffer.numberOfChannels;
-    const ambuf = buffer.getChannelData(0); // Assuming mono for simplicity in this example
+    // For simplicity, this WAV conversion assumes mono. For proper stereo,
+    // you'd interleave channels. Given the current usage, it's likely mono
+    // or the first channel of stereo.
+    const ambuf = buffer.getChannelData(0); 
     const len = ambuf.length * numOfChan * 2 + 44; // 2 bytes per sample, 44 bytes for header
     const buf = new ArrayBuffer(len);
     const view = new DataView(buf);
@@ -1415,6 +1420,13 @@
       if (!clip) return;
 
       selectAudioClip(clip.id); // Select single clip on click
+
+      // Position playhead at click location within the timeline
+      const clickXInTimeline = e.clientX - timeline.getBoundingClientRect().left + timelineWrapper.scrollLeft;
+      pauseOffset = pxToSec(clickXInTimeline);
+      playhead.style.left = `${clickXInTimeline}px`;
+      currentTimeDisplay.textContent = formatTime(pauseOffset);
+
 
       dragInfo = {
         type: 'clip',
