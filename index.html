@@ -2,143 +2,1718 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>WebRTC + WebSocket señalización automática</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Editor de Audio Multipista</title>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #111;
-    color: #eee;
-    text-align: center;
+  /* Base reset y tipografía */
+  * {
+    box-sizing: border-box;
     margin: 0;
-    padding: 1em;
+    padding: 0;
   }
-  video {
-    max-width: 90vw;
-    max-height: 70vh;
-    background: black;
-    border: 2px solid #44ff44;
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #121212;
+    color: #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden; /* Evita scroll de la página principal */
   }
-  button {
-    font-size: 1.2em;
-    margin: 0.5em;
-    padding: 0.5em 1em;
-    background: #44ff44;
-    color: #111;
+
+  /* Encabezado */
+  header {
+    background: #282828;
+    padding: 0.8rem 1.5rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap; /* Permite que los elementos se envuelvan en pantallas pequeñas */
+    gap: 1.2rem;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    flex-shrink: 0; /* Evita que el header se encoja */
+  }
+
+  header button,
+  header label,
+  .clip-controls button,
+  input[type="range"],
+  .effect-panel button { /* Added effect panel buttons */
+    background: #3a3a3a;
+    color: #ffffff;
     border: none;
+    padding: 0.6rem 1.2rem;
     border-radius: 5px;
     cursor: pointer;
+    font-size: 0.95rem;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
-  #status {
-    margin-top: 1em;
-    font-family: monospace;
-    color: #4aff4a;
+
+  header button:hover,
+  header label:hover,
+  .clip-controls button:hover,
+  .effect-panel button:hover {
+    background: #505050;
+    transform: translateY(-1px);
+  }
+
+  header button:active,
+  header label:active,
+  .clip-controls button:active,
+  .effect-panel button:active {
+    transform: translateY(0);
+  }
+
+  header button:disabled,
+  .clip-controls button:disabled,
+  .effect-panel button:disabled {
+    background: #2a2a2a;
+    color: #888;
+    cursor: not-allowed;
+  }
+
+  header input[type="file"] {
+    display: none;
+  }
+
+  /* Contenedor de la línea de tiempo */
+  #timeline-wrapper {
+    flex: 1;
+    overflow: auto;
+    background: #1a1a1a;
+    position: relative;
+    cursor: grab; /* Cursor predeterminado para arrastrar el canvas */
+  }
+  #timeline-wrapper:active {
+    cursor: grabbing;
+  }
+
+  /* Regla de tiempo */
+  #timeline-ruler {
+    position: sticky;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 30px;
+    background-color: #222;
+    border-bottom: 1px solid #333;
+    z-index: 50; /* Por encima de las pistas, por debajo del playhead */
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+  }
+
+  .ruler-mark {
+    position: absolute;
+    height: 10px;
+    width: 1px;
+    background-color: #888;
+    bottom: 0;
+  }
+
+  .ruler-text {
+    position: absolute;
+    font-size: 0.7rem;
+    color: #bbb;
+    bottom: 12px;
+    transform: translateX(-50%); /* Centra el texto en la marca */
+  }
+
+  /* Línea de tiempo (contenedor de pistas) */
+  #timeline {
+    position: relative;
+    min-height: 100%; /* Asegura que la línea de tiempo ocupe al menos la altura del wrapper */
+    min-width: 100%; /* Asegura que la línea de tiempo ocupe al menos el ancho del wrapper */
+    padding: 10px; /* Espacio alrededor de las pistas */
+    padding-top: 40px; /* Espacio para la regla */
+  }
+
+  /* Contenedor de la línea (lane) de la pista */
+  .track-lane {
+    position: absolute;
+    left: 0;
+    width: 100%; /* Ocupa todo el ancho disponible */
+    min-height: 60px; /* Altura mínima para la línea */
+    border-radius: 6px;
+    background-color: rgba(30, 30, 30, 0.7); /* Fondo más sutil para la línea */
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    transition: border-color 0.2s ease;
+  }
+
+  .track-lane.drag-over {
+    border: 2px dashed #00aaff;
+    background-color: rgba(0, 170, 255, 0.1);
+  }
+
+  /* Piezas de audio (clips) */
+  .audio-clip {
+    position: absolute;
+    height: 60px; /* Altura de la pieza de audio */
+    border-radius: 6px;
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+    color: #ffffff;
+    overflow: hidden;
+    user-select: none;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+    transition: background-color 0.2s ease;
+  }
+
+  .audio-clip:active {
+    cursor: grabbing;
+    opacity: 0.9;
+  }
+  
+  .audio-clip.selected {
+    border: 2px solid #00aaff;
+    box-shadow: 0 0 10px rgba(0, 170, 255, 0.7);
+  }
+
+  .audio-clip.selected-for-effect { /* New style for multi-selection */
+    outline: 2px dashed #ffcc00; /* Yellow dashed border */
+    outline-offset: 2px;
+  }
+
+  .audio-clip span.clip-name {
+    position: relative;
+    z-index: 2; /* Para que el texto sea visible sobre el canvas */
+    font-size: 0.85rem;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+    white-space: nowrap; /* Evita que el nombre de la pista se rompa */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: calc(100% - 120px); /* Deja espacio para controls */
+  }
+
+  .audio-clip canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%; /* El canvas ocupa toda la altura de la pieza */
+    width: 100%; /* El canvas ocupa todo el ancho de la pieza */
+    pointer-events: none;
+    opacity: 1.0; /* Increased opacity for better visibility */
+    z-index: 1;
+  }
+
+  .clip-controls {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 5px;
+    z-index: 3; /* Por encima del canvas */
+    background-color: rgba(0, 0, 0, 0.5); /* Fondo semitransparente para los controles */
+    padding: 3px;
+    border-radius: 4px;
+  }
+
+  .clip-controls button {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    min-width: 30px; /* Asegura un tamaño mínimo para los botones */
+  }
+
+  .clip-controls input[type="range"] {
+    width: 80px;
+    padding: 0;
+    margin: 0;
+    -webkit-appearance: none; /* Eliminar estilos predeterminados */
+    appearance: none;
+    background: transparent;
+  }
+
+  .clip-controls input[type="range"]::-webkit-slider-runnable-track {
+    background: #555;
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  .clip-controls input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 12px;
+    width: 12px;
+    border-radius: 50%;
+    background: #00aaff;
+    cursor: pointer;
+    margin-top: -4px; /* Centrar el thumb verticalmente */
+  }
+
+  .clip-controls input[type="range"]::-moz-range-track {
+    background: #555;
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  .clip-controls input[type="range"]::-moz-range-thumb {
+    height: 12px;
+    width: 12px;
+    border-radius: 50%;
+    background: #00aaff;
+    cursor: pointer;
+  }
+
+  /* Fade Handles */
+  .fade-handle {
+    position: absolute;
+    top: 0;
+    width: 15px; /* Draggable area */
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 5; /* Above canvas, below controls */
+    background-color: rgba(0, 255, 255, 0.1); /* Visual hint */
+    transition: background-color 0.2s ease;
+  }
+  .fade-handle:hover {
+    background-color: rgba(0, 255, 255, 0.3);
+  }
+  .fade-in-handle {
+    left: 0;
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+  }
+  .fade-out-handle {
+    right: 0;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+  }
+
+  /* Marcador de tiempo (Playhead) */
+  #playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px; /* Más visible */
+    background: #ff4d4d; /* Rojo más vibrante */
+    pointer-events: auto; /* Permite arrastrar el playhead */
+    z-index: 100; /* Asegura que esté siempre encima */
+    box-shadow: 0 0 8px rgba(255, 77, 77, 0.7);
+    cursor: ew-resize; /* Cursor para redimensionar horizontalmente */
+  }
+
+  /* Controles de zoom */
+  .zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: 20px;
+  }
+
+  .zoom-controls input[type="range"] {
+    width: 120px;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Selection Box */
+  #selection-box {
+    position: absolute;
+    background-color: rgba(0, 170, 255, 0.2);
+    border: 1px dashed #00aaff;
+    z-index: 90; /* Below playhead, above clips */
+    pointer-events: none; /* Allows clicks to pass through */
+    display: none; /* Hidden by default */
+  }
+
+  /* Loading Overlay for Export */
+  #loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    font-size: 1.5rem;
+    z-index: 1000;
+    display: none; /* Hidden by default */
+  }
+
+  /* Effects Panel */
+  .effect-panel {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: 20px;
+    border-left: 1px solid #444;
+    padding-left: 1.2rem;
   }
 </style>
 </head>
 <body>
-<h1>WebRTC + WebSocket señalización automática</h1>
-<video id="video" autoplay playsinline></video><br/>
-<button id="startBtn">Iniciar transmisión</button>
+<header>
+  <label>
+    📂 Cargar pistas
+    <input id="file-input" type="file" accept="audio/*" multiple />
+  </label>
+  <button id="add-empty-track-btn" title="Añadir una nueva pista vacía">➕ Pista vacía</button>
+  <button id="play-btn" title="Reproducir (Espacio)">▶️ Play</button>
+  <button id="pause-btn" title="Pausar (Espacio)">⏸️ Pause</button>
+  <button id="stop-btn" title="Detener">⏹️ Stop</button>
+  <button id="cut-btn" title="Cortar pista en el marcador (C)">✂️ Cortar</button>
+  <button id="delete-btn" title="Eliminar pieza de audio seleccionada (Supr/Del)" disabled>🗑️ Eliminar</button>
+  <button id="export-btn" title="Exportar mezcla de audio">💾 Exportar WAV</button>
+  
+  <div class="zoom-controls">
+    <span>Zoom:</span>
+    <input type="range" id="zoom-slider" min="50" max="500" value="150" step="10">
+  </div>
 
-<div id="status">Estado: desconectado</div>
+  <div class="effect-panel">
+    <span>Efectos:</span>
+    <button id="normalize-btn" title="Normalizar volumen de la selección">📈 Normalizar</button>
+    <button id="wavehammer-btn" title="Aplicar efecto Wavehammer (distorsión)">🔨 Wavehammer</button>
+    <button id="clear-selection-btn" title="Limpiar selección">❌ Limpiar Selección</button>
+  </div>
+
+  <span style="margin-left: auto;">Tiempo: <span id="current-time">00:00.000</span></span>
+</header>
+<div id="timeline-wrapper">
+  <div id="timeline-ruler"></div>
+  <div id="timeline"></div>
+  <div id="playhead" class="time-marker" style="left:0px"></div>
+  <div id="selection-box"></div> <!-- New selection box -->
+</div>
+
+<div id="loading-overlay">
+  <span>Procesando...</span>
+</div>
 
 <script>
-(async () => {
-  const video = document.getElementById('video');
-  const startBtn = document.getElementById('startBtn');
-  const status = document.getElementById('status');
+(() => {
+  // Constantes de configuración
+  let SCALE = 150; // Píxeles por segundo (se ajustará con el zoom)
+  const CLIP_HEIGHT = 60; // Altura de cada pieza de audio
+  const LANE_HEIGHT = CLIP_HEIGHT + 20; // Altura de cada línea de pista (clip + padding)
+  const LANE_MARGIN_TOP = 10; // Margen superior entre líneas de pista
 
-  const configuration = {
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  // Web Audio API Context
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Variables de estado global
+  let trackLanes = []; // Stores objects { id, element, clips: AudioClip[] }
+  let currentSources = []; // The active audio sources for playback
+  let pauseOffset = 0; // Time at which playback was paused (in seconds)
+  let playStartTime = 0; // ctx.currentTime when playback started
+  let playOrigin = 0; // The actual start point of playback (for the playhead)
+  let selectedClipId = null; // ID of the currently selected audio piece (for single operations)
+  let selectedClipsForEffect = []; // Array of clips selected by dragging (for effects)
+
+  // DOM element references
+  const timeline = document.getElementById('timeline');
+  const playhead = document.getElementById('playhead');
+  const fileInput = document.getElementById('file-input');
+  const addEmptyTrackBtn = document.getElementById('add-empty-track-btn');
+  const playBtn = document.getElementById('play-btn');
+  const pauseBtn = document.getElementById('pause-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  const cutBtn = document.getElementById('cut-btn');
+  const deleteBtn = document.getElementById('delete-btn');
+  const exportBtn = document.getElementById('export-btn'); // New export button
+  const timelineWrapper = document.getElementById('timeline-wrapper');
+  const currentTimeDisplay = document.getElementById('current-time');
+  const zoomSlider = document.getElementById('zoom-slider');
+  const timelineRuler = document.getElementById('timeline-ruler');
+  const selectionBox = document.getElementById('selection-box'); // New selection box
+  const loadingOverlay = document.getElementById('loading-overlay'); // New loading overlay
+  const normalizeBtn = document.getElementById('normalize-btn'); // New normalize button
+  const wavehammerBtn = document.getElementById('wavehammer-btn'); // New wavehammer button
+  const clearSelectionBtn = document.getElementById('clear-selection-btn'); // New clear selection button
+
+  // Utilities
+  const generateId = () => Math.random().toString(36).substr(2, 9); // Generates a simple unique ID
+  const randColor = () => `hsl(${Math.random() * 360}, 70%, 60%)`; // Generates a random HSL color
+  const secToPx = s => s * SCALE; // Converts seconds to pixels
+  const pxToSec = px => px / SCALE; // Converts pixels to seconds
+  const formatTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    const s = Math.floor(remainingSeconds);
+    const ms = Math.floor((remainingSeconds - s) * 1000);
+    return `${String(minutes).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
   };
 
-  let pc;
-  let localStream;
-  let ws;
+  /**
+   * Draws the waveform of an AudioBuffer on a canvas.
+   * Uses a "normalize peak" algorithm to visualize amplitude.
+   * Also draws fade in/out effects.
+   * @param {AudioBuffer} buffer - The audio buffer.
+   * @param {HTMLCanvasElement} canvas - The canvas element to draw on.
+   * @param {string} fillColor - Fill color for the waveform.
+   * @param {number} fadeInDuration - Fade in duration in seconds.
+   * @param {number} fadeOutDuration - Fade out duration in seconds.
+   */
+  function drawWaveform(buffer, canvas, fillColor = '#4caf50', fadeInDuration = 0, fadeOutDuration = 0) {
+    const ctx2d = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx2d.clearRect(0, 0, width, height);
 
-  function logStatus(text) {
-    status.textContent = 'Estado: ' + text;
-  }
+    if (!buffer || buffer.numberOfChannels === 0) {
+      // If no buffer or it's an empty clip, draw a simple rectangle
+      ctx2d.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx2d.fillRect(0, 0, width, height);
+      ctx2d.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx2d.lineWidth = 1;
+      ctx2d.strokeRect(0, 0, width, height);
+      return;
+    }
 
-  function createPeerConnection() {
-    pc = new RTCPeerConnection(configuration);
+    const data = buffer.getChannelData(0); // Use only the first channel for visualization
+    const step = Math.ceil(data.length / width);
+    const amp = height / 2;
 
-    pc.onicecandidate = event => {
-      if (event.candidate) return;
-      const localDesc = JSON.stringify(pc.localDescription);
-      ws.send(localDesc);
-      logStatus('Enviando señal SDP');
-    };
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, amp);
 
-    pc.ontrack = event => {
-      video.srcObject = event.streams[0];
-      logStatus('Recibiendo video');
-    };
-  }
-
-  function setupWebSocket() {
-    // Cambiá la IP y puerto por la IP pública o local accesible de tu PC
-    ws = new WebSocket('ws://123.45.67.89:8080');
-
-    ws.onopen = () => {
-      logStatus('WebSocket conectado');
-    };
-
-    ws.onmessage = async (event) => {
-      const msg = JSON.parse(event.data);
-      if (!pc) createPeerConnection();
-
-      if (msg.type === 'offer') {
-        await pc.setRemoteDescription(new RTCSessionDescription(msg));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify(pc.localDescription));
-        logStatus('Respuesta enviada');
-      } else if (msg.type === 'answer') {
-        await pc.setRemoteDescription(new RTCSessionDescription(msg));
-        logStatus('Conexión establecida');
-      } else if (msg.candidate) {
-        try {
-          await pc.addIceCandidate(msg);
-          logStatus('Candidato ICE agregado');
-        } catch (e) {
-          console.error('Error agregando ICE candidate:', e);
-        }
+    for (let i = 0; i < width; i++) {
+      let min = 1.0;
+      let max = -1.0;
+      for (let j = 0; j < step; j++) {
+        const datum = data[(i * step) + j];
+        if (datum < min) min = datum;
+        if (datum > max) max = datum;
       }
-    };
+      ctx2d.lineTo(i, (1 + max) * amp); // Top part of the wave
+    }
 
-    ws.onerror = (e) => {
-      console.error('WebSocket error:', e);
-      logStatus('Error WebSocket');
-    };
+    ctx2d.lineTo(width, amp); // Return to center at the end
 
-    ws.onclose = () => {
-      logStatus('WebSocket desconectado');
-    };
+    for (let i = width - 1; i >= 0; i--) {
+      let min = 1.0;
+      let max = -1.0;
+      for (let j = 0; j < step; j++) {
+        const datum = data[(i * step) + j];
+        if (datum < min) min = datum;
+        if (datum > max) max = datum;
+      }
+      ctx2d.lineTo(i, (1 + min) * amp); // Bottom part of the wave
+    }
+
+    ctx2d.closePath();
+    ctx2d.fillStyle = fillColor;
+    ctx2d.fill();
+
+    // Draw fade effects
+    if (fadeInDuration > 0) {
+        const fadePx = secToPx(fadeInDuration);
+        const gradient = ctx2d.createLinearGradient(0, 0, fadePx, 0);
+        gradient.addColorStop(0, 'rgba(0,0,0,0.8)');
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx2d.fillStyle = gradient;
+        ctx2d.fillRect(0, 0, fadePx, height);
+    }
+    if (fadeOutDuration > 0) {
+        const fadePx = secToPx(fadeOutDuration);
+        const gradient = ctx2d.createLinearGradient(width - fadePx, 0, width, 0);
+        gradient.addColorStop(0, 'rgba(0,0,0,0)');
+        gradient.addColorStop(1, 'rgba(0,0,0,0.8)');
+        ctx2d.fillStyle = gradient;
+        ctx2d.fillRect(width - fadePx, 0, fadePx, height);
+    }
   }
 
-  startBtn.onclick = async () => {
-    startBtn.disabled = true;
-    setupWebSocket();
+  /**
+   * Draws the time ruler at the top of the timeline.
+   */
+  function drawRuler() {
+    timelineRuler.innerHTML = ''; // Clear existing ruler
+    const totalWidth = parseFloat(timeline.style.width);
+    
+    // Adjust ruler mark interval based on zoom
+    let interval = 1; // Default to marks every second
+    if (SCALE < 100) { // Less than 100px per second, marks every 2 or 5 seconds
+      interval = SCALE < 50 ? 5 : 2;
+    } else if (SCALE >= 200) { // More than 200px per second, marks every 0.5 or 0.1 seconds
+      interval = SCALE >= 400 ? 0.1 : 0.5;
+    }
+
+    for (let i = 0; i * SCALE <= totalWidth + SCALE; i += interval) { // Add SCALE to ensure the last mark
+      const px = secToPx(i);
+      const mark = document.createElement('div');
+      mark.className = 'ruler-mark';
+      mark.style.left = `${px}px`;
+      
+      // Adjust mark height for smaller intervals
+      if (interval < 1) {
+          mark.style.height = '5px'; // Smaller marks for sub-seconds
+      }
+      timelineRuler.appendChild(mark);
+
+      if (interval >= 1 || (interval < 1 && i % 1 === 0)) { // Show text only for whole seconds or major marks
+        const text = document.createElement('span');
+        text.className = 'ruler-text';
+        text.style.left = `${px}px`;
+        text.textContent = formatTime(i);
+        timelineRuler.appendChild(text);
+      }
+    }
+  }
+
+  /**
+   * Updates the position and size of all track lanes and their clips.
+   * Also redraws their waveforms and updates the ruler.
+   */
+  function refreshLayout() {
+    let maxRightEdge = 0;
+
+    trackLanes.forEach((lane, laneIndex) => {
+      // Position the track lane
+      lane.element.style.top = `${laneIndex * (LANE_HEIGHT + LANE_MARGIN_TOP) + LANE_MARGIN_TOP}px`;
+      lane.element.style.height = `${LANE_HEIGHT}px`;
+
+      lane.clips.forEach((clip) => {
+        // Position the clip within its lane
+        clip.element.style.left = `${secToPx(clip.offset)}px`;
+        const clipWidth = clip.buffer ? clip.buffer.duration : 10; // 10 seconds default for empty clips
+        clip.element.style.width = `${secToPx(clipWidth)}px`;
+        clip.element.style.height = `${CLIP_HEIGHT}px`; // Ensure clip height
+
+        clip.canvas.width = secToPx(clipWidth); // Adjust canvas width to clip width
+        clip.canvas.height = CLIP_HEIGHT;
+        drawWaveform(clip.buffer, clip.canvas, clip.color, clip.fadeInDuration, clip.fadeOutDuration); // Draw with fades
+
+        // Update clip name
+        let clipNameSpan = clip.element.querySelector('.clip-name');
+        if (!clipNameSpan) {
+          clipNameSpan = document.createElement('span');
+          clipNameSpan.className = 'clip-name';
+          clip.element.appendChild(clipNameSpan);
+        }
+        clipNameSpan.textContent = clip.name;
+
+        // Update clip controls (volume, mute, solo)
+        let clipControlsDiv = clip.element.querySelector('.clip-controls');
+        if (!clipControlsDiv) {
+          clipControlsDiv = document.createElement('div');
+          clipControlsDiv.className = 'clip-controls';
+          clip.element.appendChild(clipControlsDiv);
+
+          const volumeSlider = document.createElement('input');
+          volumeSlider.type = 'range';
+          volumeSlider.min = '0';
+          volumeSlider.max = '2'; // Allows up to double volume
+          volumeSlider.step = '0.01';
+          volumeSlider.value = clip.gainNode.gain.value;
+          volumeSlider.title = 'Volumen';
+          volumeSlider.addEventListener('input', (e) => {
+            clip.gainNode.gain.value = parseFloat(e.target.value);
+            clip.originalVolume = parseFloat(e.target.value); // Update original volume
+          });
+          clipControlsDiv.appendChild(volumeSlider);
+
+          const muteBtn = document.createElement('button');
+          muteBtn.textContent = clip.isMuted ? '🔊' : '🔇';
+          muteBtn.title = 'Silenciar';
+          muteBtn.addEventListener('click', () => {
+            clip.isMuted = !clip.isMuted;
+            muteBtn.textContent = clip.isMuted ? '🔊' : '🔇';
+            updateClipAudioState(clip);
+          });
+          clipControlsDiv.appendChild(muteBtn);
+
+          const soloBtn = document.createElement('button');
+          soloBtn.textContent = clip.isSoloed ? '🎶' : '🎵';
+          soloBtn.title = 'Solo';
+          soloBtn.addEventListener('click', () => {
+            clip.isSoloed = !clip.isSoloed;
+            soloBtn.textContent = clip.isSoloed ? '🎶' : '🎵';
+            updateSoloState();
+          });
+          clipControlsDiv.appendChild(soloBtn);
+        }
+
+        // Add and position fade handles
+        let fadeInHandle = clip.element.querySelector('.fade-in-handle');
+        if (!fadeInHandle) {
+            fadeInHandle = document.createElement('div');
+            fadeInHandle.className = 'fade-handle fade-in-handle';
+            fadeInHandle.dataset.direction = 'in';
+            clip.element.appendChild(fadeInHandle);
+        }
+        // Ensure the handle moves with the fade
+        fadeInHandle.style.width = `${secToPx(clip.fadeInDuration) + 15}px`; // +15px for handle width
+
+        let fadeOutHandle = clip.element.querySelector('.fade-out-handle');
+        if (!fadeOutHandle) {
+            fadeOutHandle = document.createElement('div');
+            fadeOutHandle.className = 'fade-handle fade-out-handle';
+            fadeOutHandle.dataset.direction = 'out';
+            clip.element.appendChild(fadeOutHandle);
+        }
+        // Ensure the handle moves with the fade
+        fadeOutHandle.style.width = `${secToPx(clip.fadeOutDuration) + 15}px`; // +15px for handle width
+
+
+        maxRightEdge = Math.max(maxRightEdge, clip.offset + (clip.buffer ? clip.buffer.duration : clipWidth));
+      });
+    });
+
+    timeline.style.height = `${trackLanes.length * (LANE_HEIGHT + LANE_MARGIN_TOP) + 50}px`;
+    // Ensure timeline width is sufficient for content plus some margin
+    const minWidth = timelineWrapper.clientWidth;
+    timeline.style.width = `${Math.max(minWidth, secToPx(maxRightEdge) + 200)}px`;
+
+    drawRuler(); // Redraw ruler after adjusting timeline width
+  }
+
+  /**
+   * Updates the audio state of a clip (mute/solo).
+   * @param {object} clip - The clip object.
+   */
+  function updateClipAudioState(clip) {
+    const isAnySoloed = trackLanes.some(lane => lane.clips.some(c => c.isSoloed));
+
+    if (isAnySoloed) {
+      // If any clip is in solo mode
+      if (clip.isSoloed) {
+        clip.gainNode.gain.value = clip.isMuted ? 0 : clip.originalVolume;
+      } else {
+        clip.gainNode.gain.value = 0; // Mute if not in solo
+      }
+    } else {
+      // If no clips are in solo mode
+      clip.gainNode.gain.value = clip.isMuted ? 0 : clip.originalVolume;
+    }
+  }
+
+  /**
+   * Updates the audio state of all clips based on solo mode.
+   */
+  function updateSoloState() {
+    trackLanes.forEach(lane => {
+      lane.clips.forEach(clip => updateClipAudioState(clip));
+    });
+  }
+
+  /**
+   * Updates the playhead position and displayed time.
+   */
+  function updatePlayhead() {
+    if (!playStartTime && audioCtx.state !== 'running') {
+      // If not playing and audio context is suspended/closed, do not update.
+      return;
+    }
+
+    const now = audioCtx.currentTime;
+    const elapsedSincePlay = now - playStartTime;
+    const currentAbsoluteTime = pauseOffset + elapsedSincePlay;
+    const pos = secToPx(currentAbsoluteTime);
+
+    playhead.style.left = `${pos}px`;
+    currentTimeDisplay.textContent = formatTime(currentAbsoluteTime);
+
+    // If playhead is within the timeline, continue animating
+    if (currentAbsoluteTime < (playOrigin + getMaxTimelineDuration() + 1)) { // +1 for a small margin
+      requestAnimationFrame(updatePlayhead);
+    } else if (audioCtx.state === 'running') {
+      // If outside the range of all tracks, stop playback
+      stop(true);
+    }
+  }
+
+  /**
+   * Calculates the maximum total duration of the timeline (based on the longest clip).
+   */
+  function getMaxTimelineDuration() {
+    if (trackLanes.length === 0) return 0;
+    let maxDuration = 0;
+    trackLanes.forEach(lane => {
+      lane.clips.forEach(clip => {
+        maxDuration = Math.max(maxDuration, clip.offset + (clip.buffer ? clip.buffer.duration : 0));
+      });
+    });
+    return maxDuration;
+  }
+
+  /**
+   * Starts playback from a given offset.
+   * @param {number} offset - The time in seconds from which to start playback.
+   */
+  function play(offset = pauseOffset) {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+
+    stop(false); // Stop any previous playback without resetting pause offset
+    playStartTime = audioCtx.currentTime;
+    playOrigin = offset; // Save the actual start point for playhead update
+    pauseOffset = offset; // The pause offset is now the starting point
+
+    trackLanes.forEach(lane => {
+      lane.clips.forEach(clip => {
+        if (!clip.buffer) return; // Do not play empty clips
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = clip.buffer;
+
+        // Connect to effects chain if present, then to gainNode
+        let lastNode = source;
+        if (clip.waveShaperNode) { // If wavehammer is active
+            lastNode.connect(clip.waveShaperNode);
+            lastNode = clip.waveShaperNode;
+        }
+        lastNode.connect(clip.gainNode); // Connect to its gain node
+        clip.gainNode.connect(audioCtx.destination); // Connect gain node to destination
+
+        // Calculate when the clip should start relative to the global playhead (pauseOffset)
+        let clipRelativeStartTime = clip.offset - offset; // This can be negative if clip starts before playhead
+
+        // Calculate the offset into the clip's buffer where playback should begin
+        let clipBufferStartOffset = 0;
+        if (clipRelativeStartTime < 0) {
+            clipBufferStartOffset = Math.abs(clipRelativeStartTime);
+            clipRelativeStartTime = 0; // The clip effectively starts at 0 relative to current playback
+        }
+
+        // If the clip buffer start offset is beyond the clip's duration, skip this clip
+        if (clipBufferStartOffset >= clip.buffer.duration) {
+            return;
+        }
+
+        // The absolute time in the audio context when this clip will start playing
+        const actualPlayStartForClip = audioCtx.currentTime + clipRelativeStartTime;
+
+        // Set initial gain for the clip (considering mute/solo)
+        let initialGain = clip.originalVolume;
+        const isAnySoloed = trackLanes.some(lane => lane.clips.some(c => c.isSoloed));
+        if (isAnySoloed && !clip.isSoloed) initialGain = 0;
+        if (clip.isMuted) initialGain = 0;
+
+        // Clear any previous automation on this gain node
+        clip.gainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+        // Set initial gain (this will be the gain at actualPlayStartForClip)
+        clip.gainNode.gain.setValueAtTime(initialGain, audioCtx.currentTime); // Set immediately to current value
+
+        // --- Apply Fade In ---
+        if (clip.fadeInDuration > 0) {
+            const fadeInEndBufferOffset = clip.fadeInDuration; // Offset in buffer where fade-in ends
+            
+            if (clipBufferStartOffset < fadeInEndBufferOffset) { // If playhead is within the fade-in region
+                const currentGainAtStart = initialGain * (clipBufferStartOffset / fadeInEndBufferOffset);
+                clip.gainNode.gain.setValueAtTime(currentGainAtStart, audioCtx.currentTime); // Set current gain
+                clip.gainNode.gain.linearRampToValueAtTime(initialGain, actualPlayStartForClip + (fadeInEndBufferOffset - clipBufferStartOffset));
+            }
+        }
+
+        // --- Apply Fade Out ---
+        if (clip.fadeOutDuration > 0) {
+            const fadeOutStartBufferOffset = clip.buffer.duration - clip.fadeOutDuration; // Offset in buffer where fade-out starts
+            const fadeOutEndBufferOffset = clip.buffer.duration; // Offset in buffer where fade-out ends
+
+            if (clipBufferStartOffset < fadeOutEndBufferOffset) { // If playhead is before fade-out ends
+                const actualFadeOutStartInContext = actualPlayStartForClip + Math.max(0, fadeOutStartBufferOffset - clipBufferStartOffset);
+                const actualFadeOutEndInContext = actualPlayStartForClip + (fadeOutEndBufferOffset - clipBufferStartOffset);
+
+                // Ensure the ramp starts from the current gain value at actualFadeOutStartInContext
+                // This is important if a fade-in was just applied, or if we started playback in the middle of the clip
+                clip.gainNode.gain.linearRampToValueAtTime(initialGain, actualFadeOutStartInContext);
+                clip.gainNode.gain.linearRampToValueAtTime(0, actualFadeOutEndInContext);
+            }
+        }
+
+        source.start(actualPlayStartForClip, clipBufferStartOffset);
+
+        source.onended = () => {
+          // Remove audio source when it ends to free up resources
+          currentSources = currentSources.filter(s => s !== source);
+        };
+        currentSources.push(source);
+      });
+    });
+
+    updatePlayhead();
+    playBtn.textContent = '▶️ Play'; // Ensure button text if it was playing
+  }
+
+  /**
+   * Pauses playback.
+   */
+  function pause() {
+    if (audioCtx.state === 'running') {
+      audioCtx.suspend();
+      pauseOffset += (audioCtx.currentTime - playStartTime);
+      playStartTime = 0;
+    }
+    currentSources.forEach(s => s.stop());
+    currentSources = []; // Clear sources
+    playBtn.textContent = '▶️ Play';
+  }
+
+  /**
+   * Stops playback and resets the playhead.
+   * @param {boolean} resetPlayhead - If true, the playhead returns to 0.
+   */
+  function stop(resetPlayhead = true) {
+    currentSources.forEach(s => s.stop());
+    currentSources = [];
+    audioCtx.suspend(); // Suspend audio context
+    pauseOffset = resetPlayhead ? 0 : pauseOffset;
+    playStartTime = 0;
+    playhead.style.left = `${secToPx(pauseOffset)}px`; // Use pauseOffset for final position
+    currentTimeDisplay.textContent = formatTime(pauseOffset);
+    playBtn.textContent = '▶️ Play';
+  }
+
+  /**
+   * Cuts the selected clip at the current playhead position.
+   * The cut is performed on the same track lane, creating two clips.
+   */
+  function cutAtCursor() {
+    const cursorSec = pauseOffset; // Current playhead position
+
+    // Find the selected clip
+    let selectedClip = null;
+    let parentLane = null;
+    trackLanes.some(lane => {
+      selectedClip = lane.clips.find(clip => clip.id === selectedClipId);
+      if (selectedClip) {
+        parentLane = lane;
+        return true;
+      }
+      return false;
+    });
+
+    if (!selectedClip) {
+      alert("Please select an audio piece to cut.");
+      return;
+    }
+    if (!selectedClip.buffer) {
+      alert("Cannot cut an empty audio piece.");
+      return;
+    }
+
+    const clip = selectedClip;
+    // Ensure the cursor is within the selected clip
+    if (cursorSec < clip.offset || cursorSec > clip.offset + clip.buffer.duration) {
+      alert("The time marker must be within the selected audio piece to cut.");
+      return;
+    }
+
+    const cutPoint = cursorSec - clip.offset; // Cut point relative to the clip's start
+    if (cutPoint <= 0 || cutPoint >= clip.buffer.duration) {
+      alert("The cut point must be within the duration of the audio piece.");
+      return;
+    }
+
+    const sampleRate = clip.buffer.sampleRate;
+    const numberOfChannels = clip.buffer.numberOfChannels;
+
+    // Create new buffers for the left and right segments
+    const leftDuration = cutPoint;
+    const rightDuration = clip.buffer.duration - cutPoint;
+
+    const leftBuffer = audioCtx.createBuffer(numberOfChannels, Math.ceil(leftDuration * sampleRate), sampleRate);
+    const rightBuffer = audioCtx.createBuffer(numberOfChannels, Math.ceil(rightDuration * sampleRate), sampleRate);
+
+    for (let ch = 0; ch < numberOfChannels; ch++) {
+      const channelData = clip.buffer.getChannelData(ch);
+      leftBuffer.copyToChannel(channelData.slice(0, Math.ceil(leftDuration * sampleRate)), ch);
+      rightBuffer.copyToChannel(channelData.slice(Math.ceil(cutPoint * sampleRate)), ch);
+    }
+
+    // Modify the original clip (left segment)
+    clip.buffer = leftBuffer;
+    clip.element.style.width = `${secToPx(leftBuffer.duration)}px`;
+    clip.fadeOutDuration = 0; // Reset fade out on original clip after cut
+    drawWaveform(leftBuffer, clip.canvas, clip.color, clip.fadeInDuration, clip.fadeOutDuration);
+
+    // Create a new DOM element for the right segment
+    const newDiv = document.createElement('div');
+    newDiv.className = 'audio-clip';
+    newDiv.style.background = clip.color; // Keep the same color for the segment
+    newDiv.dataset.clipId = generateId();
+
+    const newCanvas = document.createElement('canvas');
+    newDiv.appendChild(newCanvas);
+    parentLane.element.appendChild(newDiv); // Add to the same parent (lane)
+
+    const newGainNode = audioCtx.createGain();
+    newGainNode.gain.value = clip.originalVolume; // Inherit volume
+
+    const newClip = {
+      id: newDiv.dataset.clipId,
+      buffer: rightBuffer,
+      offset: cursorSec, // The new piece starts where the previous one was cut
+      element: newDiv,
+      canvas: newCanvas,
+      name: `${clip.name} (Parte 2)`,
+      color: clip.color,
+      gainNode: newGainNode,
+      originalVolume: clip.originalVolume,
+      isMuted: clip.isMuted,
+      isSoloed: clip.isSoloed,
+      fadeInDuration: 0, // Reset fade in on new clip
+      fadeOutDuration: 0, // Reset fade out on new clip
+      parentLaneId: parentLane.id, // Reference to parent lane
+      waveShaperNode: null // New clip starts without wavehammer
+    };
+
+    // Insert the new piece right after the original in the same lane's clips array
+    const originalClipIndex = parentLane.clips.findIndex(c => c.id === clip.id);
+    parentLane.clips.splice(originalClipIndex + 1, 0, newClip);
+
+    // Sort clips by offset to maintain visual and playback order
+    parentLane.clips.sort((a, b) => a.offset - b.offset);
+
+    refreshLayout();
+    selectAudioClip(newClip.id); // Automatically select the new part
+  }
+
+  /**
+   * Deletes the currently selected clip.
+   */
+  function deleteSelectedClip() {
+    if (selectedClipId === null) return;
+
+    let clipToRemove = null;
+    let parentLane = null;
+    trackLanes.some(lane => {
+      const clipIndex = lane.clips.findIndex(c => c.id === selectedClipId);
+      if (clipIndex !== -1) {
+        clipToRemove = lane.clips[clipIndex];
+        parentLane = lane;
+        lane.clips.splice(clipIndex, 1); // Remove from clips array
+        return true;
+      }
+      return false;
+    });
+
+    if (clipToRemove && parentLane) {
+      parentLane.element.removeChild(clipToRemove.element); // Remove from DOM
+      selectedClipId = null; // Deselect
+      deleteBtn.disabled = true; // Disable delete button
+      refreshLayout();
+      updateSoloState(); // Update solo state
+    }
+  }
+
+  /**
+   * Adds a new empty track lane to the timeline.
+   */
+  function addEmptyTrack() {
+    const laneDiv = document.createElement('div');
+    laneDiv.className = 'track-lane';
+    laneDiv.dataset.laneId = generateId();
+    timeline.appendChild(laneDiv);
+
+    const newLane = {
+      id: laneDiv.dataset.laneId,
+      element: laneDiv,
+      clips: []
+    };
+    trackLanes.push(newLane);
+    refreshLayout();
+    // No selection for empty track by default, as it has no clip.
+  }
+
+  /**
+   * Loads audio files and adds them as new audio pieces.
+   * Each file is added to the first available track lane.
+   * If no lanes exist, a new one is created.
+   * @param {File[]} files - Array of File objects.
+   */
+  async function handleFiles(files) {
+    if (trackLanes.length === 0) {
+      addEmptyTrack(); // Ensure at least one lane exists
+    }
+    const targetLane = trackLanes[0]; // Add to the first lane by default
+
+    for (const file of files) {
+      if (!file.type.startsWith('audio/')) {
+        console.warn(`Skipping non-audio file: ${file.name}`);
+        continue;
+      }
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+        const clipDiv = document.createElement('div');
+        clipDiv.className = 'audio-clip';
+        const clipColor = randColor();
+        clipDiv.style.background = clipColor;
+        clipDiv.dataset.clipId = generateId(); // Store ID in DOM element
+
+        const canvas = document.createElement('canvas');
+        clipDiv.appendChild(canvas);
+
+        targetLane.element.appendChild(clipDiv); // Add to lane's DOM
+
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = 1; // Initial volume
+
+        const newClip = {
+          id: clipDiv.dataset.clipId,
+          buffer,
+          offset: 0, // Initial position of clip within the lane
+          element: clipDiv,
+          canvas,
+          name: file.name,
+          color: clipColor,
+          gainNode: gainNode,
+          originalVolume: 1,
+          isMuted: false,
+          isSoloed: false,
+          fadeInDuration: 0, // New fade properties
+          fadeOutDuration: 0, // New fade properties
+          parentLaneId: targetLane.id,
+          waveShaperNode: null // Initialize without wavehammer
+        };
+        targetLane.clips.push(newClip);
+
+      } catch (error) {
+        console.error(`Error loading or decoding file ${file.name}:`, error);
+        alert(`Could not load file ${file.name}. Make sure it is a valid audio file.`);
+      }
+    }
+    refreshLayout();
+  }
+
+  /**
+   * Selects a clip, highlighting it visually and enabling actions.
+   * @param {string} clipId - The ID of the clip to select.
+   */
+  function selectAudioClip(clipId) {
+    // Deselect previous clip
+    if (selectedClipId) {
+      let prevSelectedClip = null;
+      trackLanes.some(lane => {
+        prevSelectedClip = lane.clips.find(c => c.id === selectedClipId);
+        if (prevSelectedClip) {
+          prevSelectedClip.element.classList.remove('selected');
+          return true;
+        }
+        return false;
+      });
+    }
+
+    selectedClipId = clipId;
+    if (selectedClipId) {
+      let newSelectedClip = null;
+      trackLanes.some(lane => {
+        newSelectedClip = lane.clips.find(c => c.id === selectedClipId);
+        if (newSelectedClip) {
+          newSelectedClip.element.classList.add('selected');
+          return true;
+        }
+        return false;
+      });
+      deleteBtn.disabled = false; // Enable delete button
+    } else {
+      deleteBtn.disabled = true; // Disable if nothing selected
+    }
+  }
+
+  /**
+   * Handles mouse wheel event for zooming.
+   * @param {WheelEvent} e - The mouse wheel event.
+   */
+  function handleWheelZoom(e) {
+    e.preventDefault(); // Prevent page scrolling
+
+    const zoomFactor = 1.1; // Zoom factor
+    const oldScale = SCALE;
+
+    if (e.deltaY < 0) { // Wheel up (zoom in)
+      SCALE = Math.min(zoomSlider.max, SCALE * zoomFactor);
+    } else { // Wheel down (zoom out)
+      SCALE = Math.max(zoomSlider.min, SCALE / zoomFactor);
+    }
+
+    // Update zoom slider value
+    zoomSlider.value = SCALE;
+
+    // Calculate mouse position on the timeline before and after zoom
+    const mouseX = e.clientX - timelineWrapper.getBoundingClientRect().left + timelineWrapper.scrollLeft;
+    const timeAtMouse = pxToSec(mouseX); // Time at mouse position before zoom
+    
+    refreshLayout(); // Update layout with new scale
+
+    const newMouseX = secToPx(timeAtMouse); // New pixel position for the same time
+    timelineWrapper.scrollLeft = newMouseX - (e.clientX - timelineWrapper.getBoundingClientRect().left);
+    
+    // Ensure playhead stays in correct position
+    playhead.style.left = `${secToPx(pauseOffset)}px`;
+  }
+
+  /**
+   * Exports the entire mix as a WAV file.
+   * Note: MP3 encoding requires an additional library (e.g., Lamejs, WebAudioRecorder.js)
+   * and is beyond the scope of this single HTML file example without external dependencies.
+   */
+  async function exportMixToWAV() {
+    loadingOverlay.style.display = 'flex'; // Show loading overlay
+
+    const totalDuration = getMaxTimelineDuration();
+    if (totalDuration === 0) {
+      alert("No audio to export.");
+      loadingOverlay.style.display = 'none';
+      return;
+    }
+
+    const offlineCtx = new OfflineAudioContext(audioCtx.numberOfChannels, totalDuration * audioCtx.sampleRate, audioCtx.sampleRate);
+
+    trackLanes.forEach(lane => {
+      lane.clips.forEach(clip => {
+        if (!clip.buffer) return;
+
+        const source = offlineCtx.createBufferSource();
+        source.buffer = clip.buffer;
+
+        // Create a gain node for the offline context to apply volume and fades
+        const offlineGainNode = offlineCtx.createGain();
+        
+        // Connect to effects chain if present, then to gainNode
+        let lastNode = source;
+        if (clip.waveShaperNode) { // If wavehammer is active on original clip
+            const offlineWaveShaperNode = offlineCtx.createWaveShaper();
+            offlineWaveShaperNode.curve = clip.waveShaperNode.curve; // Copy the curve
+            lastNode.connect(offlineWaveShaperNode);
+            lastNode = offlineWaveShaperNode;
+        }
+        lastNode.connect(offlineGainNode);
+        offlineGainNode.connect(offlineCtx.destination);
+
+        // Apply initial volume
+        offlineGainNode.gain.setValueAtTime(clip.originalVolume, 0);
+
+        // Apply fades in offline context
+        if (clip.fadeInDuration > 0) {
+            offlineGainNode.gain.setValueAtTime(0, clip.offset);
+            offlineGainNode.gain.linearRampToValueAtTime(clip.originalVolume, clip.offset + clip.fadeInDuration);
+        }
+        if (clip.fadeOutDuration > 0) {
+            offlineGainNode.gain.linearRampToValueAtTime(clip.originalVolume, clip.offset + clip.buffer.duration - clip.fadeOutDuration);
+            offlineGainNode.gain.linearRampToValueAtTime(0, clip.offset + clip.buffer.duration);
+        }
+
+        source.start(clip.offset); // Start at clip's offset in the offline context
+      });
+    });
 
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      video.srcObject = localStream;
+      const renderedBuffer = await offlineCtx.startRendering();
+      const wavBlob = audioBufferToWav(renderedBuffer);
 
-      createPeerConnection();
-      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      ws.send(JSON.stringify(pc.localDescription));
-      logStatus('Oferta enviada');
-    } catch (e) {
-      alert('Error accediendo a cámara/micrófono o creando conexión:\n' + e);
-      startBtn.disabled = false;
+      const url = URL.createObjectURL(wavBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mix.wav';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      alert("Mix exported as mix.wav!");
+    } catch (error) {
+      console.error("Error rendering or exporting audio:", error);
+      alert("Error exporting audio. See console for details.");
+    } finally {
+      loadingOverlay.style.display = 'none'; // Hide loading overlay
     }
-  };
+  }
+
+  /**
+   * Converts an AudioBuffer to a WAV Blob.
+   * From: https://github.com/higuma/web-audio-recorder-js/blob/master/lib-min/web-audio-recorder-js.min.js
+   * (Simplified for single-channel and basic WAV header)
+   * @param {AudioBuffer} buffer - The AudioBuffer to convert.
+   * @returns {Blob} - The WAV audio data as a Blob.
+   */
+  function audioBufferToWav(buffer) {
+    const numOfChan = buffer.numberOfChannels;
+    const ambuf = buffer.getChannelData(0); // Assuming mono for simplicity in this example
+    const len = ambuf.length * numOfChan * 2 + 44; // 2 bytes per sample, 44 bytes for header
+    const buf = new ArrayBuffer(len);
+    const view = new DataView(buf);
+
+    // Write WAV header
+    writeString(view, 0, 'RIFF'); // RIFF identifier
+    view.setUint32(4, len - 8, true); // file length
+    writeString(view, 8, 'WAVE'); // RIFF type
+    writeString(view, 12, 'fmt '); // format chunk identifier
+    view.setUint32(16, 16, true); // format chunk length
+    view.setUint16(20, 1, true); // sample format (1 = PCM)
+    view.setUint16(22, numOfChan, true); // number of channels
+    view.setUint32(24, buffer.sampleRate, true); // sample rate
+    view.setUint32(28, buffer.sampleRate * numOfChan * 2, true); // byte rate (sample rate * block align)
+    view.setUint16(32, numOfChan * 2, true); // block align (channels * bytes per sample)
+    view.setUint16(34, 16, true); // bits per sample
+    writeString(view, 36, 'data'); // data chunk identifier
+    view.setUint32(40, ambuf.length * numOfChan * 2, true); // data chunk length
+
+    // Write audio data
+    floatTo16BitPCM(view, 44, ambuf);
+
+    return new Blob([view], { type: 'audio/wav' });
+
+    function writeString(view, offset, s) {
+      for (let i = 0; i < s.length; i++) {
+        view.setUint8(offset + i, s.charCodeAt(i));
+      }
+    }
+
+    function floatTo16BitPCM(output, offset, input) {
+      for (let i = 0; i < input.length; i++, offset += 2) {
+        let s = Math.max(-1, Math.min(1, input[i]));
+        s = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        output.setInt16(offset, s, true);
+      }
+    }
+  }
+
+  /**
+   * Applies normalization effect to selected clips.
+   * Normalizes the peak amplitude of each selected clip to 0.99.
+   */
+  function applyNormalization() {
+    if (selectedClipsForEffect.length === 0) {
+      alert("Please select one or more audio pieces to normalize.");
+      return;
+    }
+
+    selectedClipsForEffect.forEach(clip => {
+      if (!clip.buffer) return;
+
+      const data = clip.buffer.getChannelData(0); // Analyze first channel
+      let maxAmplitude = 0;
+      for (let i = 0; i < data.length; i++) {
+        maxAmplitude = Math.max(maxAmplitude, Math.abs(data[i]));
+      }
+
+      if (maxAmplitude === 0) {
+        console.warn(`Clip ${clip.name} has no audio data, cannot normalize.`);
+        return;
+      }
+
+      const targetPeak = 0.99; // Target peak amplitude (e.g., -0.1 dBFS)
+      const gainFactor = targetPeak / maxAmplitude;
+
+      // Apply gain to the clip's original volume
+      clip.originalVolume *= gainFactor;
+      clip.gainNode.gain.value = clip.originalVolume; // Update live gain node
+
+      // Redraw waveform to reflect potential visual change (though normalization is more about playback gain)
+      drawWaveform(clip.buffer, clip.canvas, clip.color, clip.fadeInDuration, clip.fadeOutDuration);
+    });
+
+    alert(`Normalization applied to ${selectedClipsForEffect.length} clip(s).`);
+  }
+
+  /**
+   * Creates a distortion curve for a WaveShaperNode.
+   * From: https://developer.mozilla.org/en-US/docs/Web/API/WaveShaperNode
+   * @param {number} amount - The amount of distortion.
+   * @returns {Float32Array} - The distortion curve.
+   */
+  function makeDistortionCurve(amount) {
+    const k = typeof amount === 'number' ? amount : 50;
+    const n_samples = 44100;
+    const curve = new Float32Array(n_samples);
+    const deg = Math.PI / 180;
+    for (let i = 0; i < n_samples; ++i) {
+      const x = i * 2 / n_samples - 1;
+      curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+    }
+    return curve;
+  }
+
+  /**
+   * Applies or removes Wavehammer (distortion) effect to selected clips.
+   * Toggles the effect on/off.
+   */
+  function applyWavehammer() {
+    if (selectedClipsForEffect.length === 0) {
+      alert("Please select one or more audio pieces to apply Wavehammer.");
+      return;
+    }
+
+    selectedClipsForEffect.forEach(clip => {
+      if (!clip.buffer) return;
+
+      if (!clip.waveShaperNode) {
+        // Apply Wavehammer: Create and connect WaveShaperNode
+        clip.waveShaperNode = audioCtx.createWaveShaper();
+        clip.waveShaperNode.curve = makeDistortionCurve(400); // Adjust amount for desired distortion
+        
+        // No need to reconnect here, the 'play' function will handle the graph
+        // based on the presence of clip.waveShaperNode.
+        alert(`Wavehammer applied to clip: ${clip.name}`);
+      } else {
+        // Remove Wavehammer: Disconnect and nullify
+        // The 'play' function will rebuild the graph without it
+        clip.waveShaperNode.disconnect();
+        clip.waveShaperNode = null;
+        alert(`Wavehammer removed from clip: ${clip.name}`);
+      }
+    });
+  }
+
+  /**
+   * Clears the current selection of clips for effects.
+   */
+  function clearSelection() {
+    selectedClipsForEffect.forEach(clip => {
+      clip.element.classList.remove('selected-for-effect');
+    });
+    selectedClipsForEffect = [];
+    selectionBox.style.display = 'none'; // Hide the selection box
+  }
+
+  // --- Event Listeners for dragging and selection ---
+
+  let dragInfo = null; // { type: 'clip' | 'playhead' | 'timeline' | 'fade' | 'selection', ... }
+  let currentDropLane = null; // The lane currently being dragged over
+
+  // Mousedown on an audio clip or fade handle
+  timeline.addEventListener('mousedown', e => {
+    const targetFadeHandle = e.target.closest('.fade-handle');
+    const targetClipElement = e.target.closest('.audio-clip');
+
+    if (targetFadeHandle) {
+        e.preventDefault();
+        const clipElement = targetFadeHandle.closest('.audio-clip');
+        if (!clipElement) return;
+
+        let clip = null;
+        trackLanes.some(lane => {
+            clip = lane.clips.find(c => c.element === clipElement);
+            return !!clip;
+        });
+        if (!clip) return;
+
+        dragInfo = {
+            type: 'fade',
+            clip: clip,
+            direction: targetFadeHandle.dataset.direction,
+            startX: e.clientX,
+            originalFadeDuration: (targetFadeHandle.dataset.direction === 'in' ? clip.fadeInDuration : clip.fadeOutDuration)
+        };
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'ew-resize';
+    } else if (targetClipElement) {
+      e.preventDefault();
+      let clip = null;
+      let parentLane = null;
+      trackLanes.some(lane => {
+        clip = lane.clips.find(c => c.element === targetClipElement);
+        if (clip) {
+          parentLane = lane;
+          return true;
+        }
+        return false;
+      });
+      if (!clip) return;
+
+      selectAudioClip(clip.id); // Select single clip on click
+
+      dragInfo = {
+        type: 'clip',
+        clip: clip,
+        originalLane: parentLane,
+        startX: e.clientX,
+        startY: e.clientY,
+        startOffset: clip.offset,
+        startTop: parseFloat(clip.element.style.top), // Initial vertical position
+      };
+      // Change clip position to absolute for free dragging
+      clip.element.style.position = 'absolute';
+      clip.element.style.zIndex = '101'; // Ensure it's on top of everything
+      document.body.style.userSelect = 'none'; // Prevent text selection during drag
+      document.body.style.cursor = 'grabbing';
+    }
+  });
+
+  // Mousedown on the playhead
+  playhead.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragInfo = {
+      type: 'playhead',
+      startX: e.clientX,
+      startPlayheadLeft: parseFloat(playhead.style.left),
+    };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ew-resize';
+  });
+
+  // Mousedown on the wrapper (timeline background)
+  timelineWrapper.addEventListener('mousedown', e => {
+    // If the click was not on a clip, playhead, ruler, or controls
+    if (!e.target.closest('.audio-clip') && e.target !== playhead && e.target !== timelineRuler && !e.target.closest('.ruler-mark') && !e.target.closest('.ruler-text') && !e.target.closest('.clip-controls')) {
+      e.preventDefault();
+      
+      // Start selection drag if not already dragging something else
+      dragInfo = {
+        type: 'selection',
+        startX: e.clientX,
+        startY: e.clientY,
+        startScrollLeft: timelineWrapper.scrollLeft,
+        startScrollTop: timelineWrapper.scrollTop,
+        selectionBoxInitialLeft: e.clientX - timelineWrapper.getBoundingClientRect().left + timelineWrapper.scrollLeft,
+        selectionBoxInitialTop: e.clientY - timelineWrapper.getBoundingClientRect().top + timelineWrapper.scrollTop
+      };
+      selectionBox.style.left = `${dragInfo.selectionBoxInitialLeft}px`;
+      selectionBox.style.top = `${dragInfo.selectionBoxInitialTop}px`;
+      selectionBox.style.width = '0px';
+      selectionBox.style.height = '0px';
+      selectionBox.style.display = 'block'; // Show selection box
+      
+      document.body.style.cursor = 'crosshair'; // Change cursor for selection
+      selectAudioClip(null); // Deselect any single clip
+      clearSelection(); // Clear previous multi-selection
+    }
+  });
+
+  // Mousemove for dragging
+  document.addEventListener('mousemove', e => {
+    if (!dragInfo) return;
+
+    if (dragInfo.type === 'playhead') {
+      // Drag playhead
+      const dx = e.clientX - dragInfo.startX;
+      let newLeft = dragInfo.startPlayheadLeft + dx;
+      if (newLeft < 0) newLeft = 0;
+      
+      const maxLeft = parseFloat(timeline.style.width) - playhead.offsetWidth;
+      if (newLeft > maxLeft) newLeft = maxLeft;
+
+      playhead.style.left = `${newLeft}px`;
+      pauseOffset = pxToSec(newLeft);
+      currentTimeDisplay.textContent = formatTime(pauseOffset);
+    } else if (dragInfo.type === 'timeline') {
+      // Drag background (scroll)
+      const dx = e.clientX - dragInfo.startX;
+      timelineWrapper.scrollLeft = dragInfo.startScrollLeft - dx;
+    } else if (dragInfo.type === 'clip') {
+      // Drag an audio clip
+      const clip = dragInfo.clip;
+      const dx = (e.clientX - dragInfo.startX); // Movement in pixels
+      const dy = (e.clientY - dragInfo.startY); // Vertical movement in pixels
+
+      // Update visual position of clip (absolute, for free dragging)
+      clip.element.style.left = `${secToPx(dragInfo.startOffset) + dx}px`;
+      clip.element.style.top = `${dragInfo.startTop + dy}px`;
+
+      // Detect which lane the clip is over
+      const mouseY = e.clientY - timeline.getBoundingClientRect().top + timelineWrapper.scrollTop;
+      const targetLaneIndex = Math.floor((mouseY - LANE_MARGIN_TOP) / (LANE_HEIGHT + LANE_MARGIN_TOP));
+      
+      let newDropLane = null;
+      if (targetLaneIndex >= 0 && targetLaneIndex < trackLanes.length) {
+        newDropLane = trackLanes[targetLaneIndex];
+      }
+
+      // Update highlight of target lane
+      if (currentDropLane && currentDropLane !== newDropLane) {
+        currentDropLane.element.classList.remove('drag-over');
+      }
+      if (newDropLane && newDropLane !== currentDropLane) {
+        newDropLane.element.classList.add('drag-over');
+      }
+      currentDropLane = newDropLane;
+    } else if (dragInfo.type === 'fade') {
+        const clip = dragInfo.clip;
+        const dx = (e.clientX - dragInfo.startX); // Pixels moved
+        const dSec = pxToSec(dx); // Seconds moved
+
+        if (dragInfo.direction === 'in') {
+            let newFadeDuration = dragInfo.originalFadeDuration + dSec;
+            newFadeDuration = Math.max(0, newFadeDuration); // No negative fade
+            newFadeDuration = Math.min(newFadeDuration, clip.buffer.duration / 2); // Max half clip duration
+            clip.fadeInDuration = newFadeDuration;
+        } else { // direction === 'out'
+            let newFadeDuration = dragInfo.originalFadeDuration - dSec; // Dragging left decreases fade-out
+            newFadeDuration = Math.max(0, newFadeDuration);
+            newFadeDuration = Math.min(newFadeDuration, clip.buffer.duration / 2);
+            clip.fadeOutDuration = newFadeDuration;
+        }
+        drawWaveform(clip.buffer, clip.canvas, clip.color, clip.fadeInDuration, clip.fadeOutDuration); // Redraw only this clip's waveform
+    } else if (dragInfo.type === 'selection') {
+        const currentX = e.clientX - timelineWrapper.getBoundingClientRect().left + timelineWrapper.scrollLeft;
+        const currentY = e.clientY - timelineWrapper.getBoundingClientRect().top + timelineWrapper.scrollTop;
+
+        // Calculate dimensions of selection box
+        const left = Math.min(dragInfo.selectionBoxInitialLeft, currentX);
+        const top = Math.min(dragInfo.selectionBoxInitialTop, currentY);
+        const width = Math.abs(currentX - dragInfo.selectionBoxInitialLeft);
+        const height = Math.abs(currentY - dragInfo.selectionBoxInitialTop);
+
+        selectionBox.style.left = `${left}px`;
+        selectionBox.style.top = `${top}px`;
+        selectionBox.style.width = `${width}px`;
+        selectionBox.style.height = `${height}px`;
+
+        // Identify clips within selection
+        const selectionStartPx = left;
+        const selectionEndPx = left + width;
+        const selectionTopPx = top;
+        const selectionBottomPx = top + height;
+
+        const previouslySelected = new Set(selectedClipsForEffect.map(c => c.id));
+        selectedClipsForEffect = [];
+
+        trackLanes.forEach(lane => {
+            lane.clips.forEach(clip => {
+                const clipLeftPx = parseFloat(clip.element.style.left);
+                const clipRightPx = clipLeftPx + parseFloat(clip.element.style.width);
+                const clipTopPx = parseFloat(clip.element.style.top);
+                const clipBottomPx = clipTopPx + parseFloat(clip.element.style.height);
+
+                // Check for overlap
+                const overlapsX = Math.max(selectionStartPx, clipLeftPx) < Math.min(selectionEndPx, clipRightPx);
+                const overlapsY = Math.max(selectionTopPx, clipTopPx) < Math.min(selectionBottomPx, clipBottomPx);
+
+                if (overlapsX && overlapsY) {
+                    selectedClipsForEffect.push(clip);
+                    if (!previouslySelected.has(clip.id)) {
+                        clip.element.classList.add('selected-for-effect');
+                    }
+                } else {
+                    if (previouslySelected.has(clip.id)) {
+                        clip.element.classList.remove('selected-for-effect');
+                    }
+                }
+            });
+        });
+    }
+  });
+
+  // Mouseup to release drag
+  document.addEventListener('mouseup', () => {
+    if (dragInfo) {
+      if (dragInfo.type === 'clip') {
+        // Release an audio clip
+        const clip = dragInfo.clip;
+        const originalLane = dragInfo.originalLane;
+        
+        // Restore relative position and z-index
+        clip.element.style.position = 'absolute';
+        clip.element.style.zIndex = ''; // Restore z-index
+
+        // Calculate new horizontal offset relative to the lane
+        const newPxOffset = parseFloat(clip.element.style.left);
+        let newOffset = pxToSec(newPxOffset);
+        if (newOffset < 0) newOffset = 0;
+        clip.offset = newOffset;
+
+        // If dragged to a new lane
+        if (currentDropLane && currentDropLane.id !== originalLane.id) {
+          // Remove from original lane
+          originalLane.clips = originalLane.clips.filter(c => c.id !== clip.id);
+          originalLane.element.removeChild(clip.element);
+
+          // Add to new lane
+          currentDropLane.clips.push(clip);
+          currentDropLane.element.appendChild(clip.element);
+          clip.parentLaneId = currentDropLane.id;
+        }
+        
+        // Sort clips in the target lane (or the same lane if not moved vertically)
+        (currentDropLane || originalLane).clips.sort((a, b) => a.offset - b.offset);
+
+        if (currentDropLane) {
+          currentDropLane.element.classList.remove('drag-over');
+        }
+        currentDropLane = null; // Reset drag lane
+
+      } else if (dragInfo.type === 'fade') {
+        // No need for refreshLayout, waveform already redrawn on mousemove
+      } else if (dragInfo.type === 'selection') {
+        selectionBox.style.display = 'none'; // Hide selection box
+        // Selected clips are already highlighted in mousemove
+      }
+      dragInfo = null;
+      document.body.style.userSelect = ''; // Restore text selection
+      document.body.style.cursor = ''; // Restore cursor
+      refreshLayout(); // Re-render everything to ensure correct positions
+    }
+  });
+
+  // File handling (input and drag-and-drop)
+  fileInput.addEventListener('change', e => handleFiles([...e.target.files]));
+  timelineWrapper.addEventListener('dragover', e => e.preventDefault()); // Allow drop
+  timelineWrapper.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer.files.length) handleFiles([...e.dataTransfer.files]);
+  });
+
+  // Click on wrapper to position playhead (if not clip or playhead drag)
+  timelineWrapper.addEventListener('click', e => {
+    // Only if click was not on a clip, playhead, ruler, or clip controls
+    if (!e.target.closest('.audio-clip') && e.target !== playhead && e.target !== timelineRuler && !e.target.closest('.ruler-mark') && !e.target.closest('.ruler-text') && !e.target.closest('.clip-controls')) {
+      const bounds = timelineWrapper.getBoundingClientRect();
+      const x = e.clientX - bounds.left + timelineWrapper.scrollLeft;
+      pauseOffset = pxToSec(x);
+      playhead.style.left = `${x}px`;
+      currentTimeDisplay.textContent = formatTime(pauseOffset);
+      selectAudioClip(null); // Deselect any clip on background click
+      clearSelection(); // Clear multi-selection
+    }
+  });
+
+  // Playback controls
+  addEmptyTrackBtn.addEventListener('click', () => addEmptyTrack());
+  playBtn.addEventListener('click', () => play(pauseOffset));
+  pauseBtn.addEventListener('click', () => pause());
+  stopBtn.addEventListener('click', () => stop(true));
+  cutBtn.addEventListener('click', () => cutAtCursor());
+  deleteBtn.addEventListener('click', () => deleteSelectedClip());
+  exportBtn.addEventListener('click', () => exportMixToWAV()); // New export button
+
+  // Zoom slider
+  zoomSlider.addEventListener('input', (e) => {
+    SCALE = parseFloat(e.target.value);
+    refreshLayout();
+    // Adjust playhead position to new zoom
+    playhead.style.left = `${secToPx(pauseOffset)}px`;
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (e.key === ' ') { // Space for Play/Pause
+      e.preventDefault();
+      if (audioCtx.state === 'running') {
+        pause();
+      } else {
+        play(pauseOffset);
+      }
+    }
+    if (e.key.toLowerCase() === 'c') { // 'C' for cut
+      e.preventDefault();
+      cutAtCursor();
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') { // Del/Backspace for delete
+      e.preventDefault();
+      deleteSelectedClip();
+    }
+  });
+
+  // Mouse wheel zoom
+  timelineWrapper.addEventListener('wheel', handleWheelZoom);
+
+  // Effect buttons
+  normalizeBtn.addEventListener('click', () => applyNormalization());
+  wavehammerBtn.addEventListener('click', () => applyWavehammer());
+  clearSelectionBtn.addEventListener('click', () => clearSelection());
+
+  // Initialize buttons disabled if no clips
+  deleteBtn.disabled = true;
+
+  // Ensure audio context resumes with user interaction
+  document.addEventListener('click', () => {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  }, { once: true }); // Only needs to run once at startup
 })();
 </script>
 </body>
