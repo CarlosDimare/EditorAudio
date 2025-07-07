@@ -7,12 +7,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        'track-bg': '#2a2a2a',
-        'track-border': '#404040',
-        'waveform': '#4ade80',
-        'waveform-selected': '#22c55e',
-        'control-bg': '#1f1f1f',
-        'control-border': '#333333',
+        'gray-850': '#1e293b',
+      },
+      animation: {
+        'pulse-slow': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
       }
     },
   },
