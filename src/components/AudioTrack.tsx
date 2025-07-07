@@ -39,15 +39,15 @@ const AudioTrack: React.FC<AudioTrackProps> = ({
   return (
     <div 
       className={`
-        bg-track-bg border border-track-border rounded-lg overflow-hidden
+        bg-gray-800 border border-gray-600 rounded-lg overflow-hidden
         transition-all duration-200 hover:border-gray-500
-        ${track.isSelected ? 'ring-2 ring-blue-500 border-blue-500' : ''}
+        ${track.isSelected ? 'ring-2 ring-blue-400 border-blue-400 shadow-lg shadow-blue-400/20' : ''}
       `}
       onClick={handleTrackSelect}
     >
       <div className="flex">
-        {/* Left Controls Column */}
-        <div className="w-64 bg-control-bg border-r border-control-border p-4 flex-shrink-0">
+        {/* Left Controls Column - Dedicated area for all controls */}
+        <div className="w-72 bg-gray-900 border-r border-gray-600 p-5 flex-shrink-0">
           <TrackControls
             track={track}
             onVolumeChange={handleVolumeChange}
@@ -57,9 +57,9 @@ const AudioTrack: React.FC<AudioTrackProps> = ({
           />
         </div>
 
-        {/* Timeline Area */}
-        <div className="flex-1 p-4">
-          <div className="space-y-3">
+        {/* Timeline Area - Clean separation from controls */}
+        <div className="flex-1 p-6 bg-gray-850">
+          <div className="space-y-4">
             {/* Waveform Display */}
             <WaveformDisplay
               waveformData={track.waveformData}
@@ -68,9 +68,14 @@ const AudioTrack: React.FC<AudioTrackProps> = ({
               duration={track.duration}
             />
             
-            {/* Track Label positioned below waveform */}
-            <div className="text-sm text-gray-300 font-medium pl-2">
-              {track.name}
+            {/* Track Label positioned directly below waveform */}
+            <div className="flex items-center justify-between pt-2 border-t border-gray-700">
+              <div className="text-sm text-gray-300 font-medium">
+                {track.name}
+              </div>
+              <div className="text-xs text-gray-500">
+                {Math.floor(track.duration / 60)}:{(track.duration % 60).toString().padStart(2, '0')}
+              </div>
             </div>
           </div>
         </div>
