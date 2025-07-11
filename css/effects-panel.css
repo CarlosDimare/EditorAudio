@@ -1,0 +1,54 @@
+.effects-panel {
+  position: fixed;
+  right: 0;
+  top: 50px;
+  bottom: 0;
+  width: 300px;
+  background: #282828;
+  border-left: 1px solid #444;
+  padding: 1rem;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  z-index: 1000;
+}
+
+.effects-panel.open {
+  transform: translateX(0);
+}
+
+.effects-panel h3 {
+  color: #fff;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #444;
+  padding-bottom: 0.5rem;
+}
+
+.effect-control {
+  margin-bottom: 1rem;
+}
+
+.effect-control label {
+  display: block;
+  color: #bbb;
+  margin-bottom: 0.3rem;
+}
+
+.effect-control input[type="range"] {
+  width: 100%;
+}
+
+.volume-meter {
+  width: 20px;
+  height: 150px;
+  background: #333;
+  position: relative;
+  margin: 0 auto;
+}
+
+.volume-meter-fill {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(to top, #4CAF50, #FFC107, #F44336);
+  transition: height 0.1s ease;
+}

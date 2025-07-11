@@ -1,0 +1,86 @@
+/* Estilos para la línea de tiempo del editor de audio */
+
+#timeline-wrapper {
+    flex: 1;
+    overflow: auto;
+    background: #1a1a1a;
+    position: relative;
+    cursor: grab;
+}
+
+#timeline {
+    position: relative;
+    min-height: 100%;
+    padding: 10px;
+    padding-top: 40px;
+}
+
+.track-lane {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    min-height: 60px;
+    border-radius: 6px;
+    background-color: rgba(30, 30, 30, 0.7);
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    transition: border-color 0.2s ease;
+}
+
+.audio-clip {
+    position: absolute;
+    height: 60px;
+    border-radius: 6px;
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+    color: #ffffff;
+    overflow: hidden;
+    user-select: none;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+    transition: background-color 0.2s ease;
+}
+
+.audio-clip.selected {
+    border: 2px solid #00aaff;
+    box-shadow: 0 0 10px rgba(0, 170, 255, 0.7);
+}
+
+.fade-handle {
+    position: absolute;
+    top: 0;
+    width: 15px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 5;
+    background-color: rgba(0, 255, 255, 0.1);
+    transition: background-color 0.2s ease;
+}
+
+.fade-handle:hover {
+    background-color: rgba(0, 255, 255, 0.3);
+}
+
+.fade-in-handle {
+    left: 0;
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+
+.fade-out-handle {
+    right: 0;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+#playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #ff4d4d;
+    pointer-events: auto;
+    z-index: 100;
+    box-shadow: 0 0 8px rgba(255, 77, 77, 0.7);
+    cursor: ew-resize;
+}

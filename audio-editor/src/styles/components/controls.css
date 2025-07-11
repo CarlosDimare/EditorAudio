@@ -1,0 +1,97 @@
+/* Estilos para los componentes de control del editor de audio */
+
+header {
+    background: #282828;
+    padding: 0.8rem 1.5rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.2rem;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+header button,
+header label,
+.clip-controls button,
+.effect-panel button {
+    background: #3a3a3a;
+    color: #ffffff;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+header button:hover,
+header label:hover,
+.clip-controls button:hover,
+.effect-panel button:hover {
+    background: #505050;
+    transform: translateY(-1px);
+}
+
+header button:active,
+header label:active,
+.clip-controls button:active,
+.effect-panel button:active {
+    transform: translateY(0);
+}
+
+header button:disabled,
+.clip-controls button:disabled,
+.effect-panel button:disabled {
+    background: #2a2a2a;
+    color: #888;
+    cursor: not-allowed;
+}
+
+.clip-controls {
+    display: flex;
+    gap: 5px;
+    z-index: 3;
+    background-color: rgba(0, 0, 0, 0.5);
+    padding: 3px;
+    border-radius: 4px;
+}
+
+.clip-controls input[type="range"] {
+    width: 80px;
+    padding: 0;
+    margin: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+}
+
+.clip-controls input[type="range"]::-webkit-slider-runnable-track {
+    background: #555;
+    height: 4px;
+    border-radius: 2px;
+}
+
+.clip-controls input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 12px;
+    width: 12px;
+    border-radius: 50%;
+    background: #00aaff;
+    cursor: pointer;
+    margin-top: -4px;
+}
+
+.clip-controls input[type="range"]::-moz-range-track {
+    background: #555;
+    height: 4px;
+    border-radius: 2px;
+}
+
+.clip-controls input[type="range"]::-moz-range-thumb {
+    height: 12px;
+    width: 12px;
+    border-radius: 50%;
+    background: #00aaff;
+    cursor: pointer;
+}
