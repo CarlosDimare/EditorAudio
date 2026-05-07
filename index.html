@@ -2138,39 +2138,55 @@
         env.useBrowserCache = true;
 
         window._transcriberPipeline = null;
+        window._transcriberReady = false;
 
         async function getTranscriber() {
             if (!window._transcriberPipeline) {
-                window._transcriberPipeline = await pipeline(
-                    'automatic-speech-recognition',
-                    'Xenova/whisper-tiny',
-                    {
-                        dtype: 'q8',
-                        progress_callback: (progress) => {
-                            const bar = document.getElementById('trans-progress-bar');
-                            const status = document.getElementById('trans-status');
-                            if (bar && progress.status === 'progress') {
-                                const progEl = document.getElementById('trans-progress');
-                                if (progEl) progEl.style.display = 'block';
-                                const pct = Math.round(progress.progress || 0);
-                                bar.style.width = pct + '%';
-                                if (status) {
-                                    if (pct < 5) {
-                                        status.textContent = '⏳ Conectando con CDN de modelos...';
-                                    } else {
-                                        status.textContent = `⏳ Descargando modelo Whisper Tiny (~42MB)... ${pct}%`;
+                try {
+                    window._transcriberPipeline = await pipeline(
+                        'automatic-speech-recognition',
+                        'Xenova/whisper-tiny',
+                        {
+                            dtype: 'q8',
+                            progress_callback: (progress) => {
+                                const bar = document.getElementById('trans-progress-bar');
+                                const status = document.getElementById('trans-status');
+                                if (bar && progress.status === 'progress') {
+                                    const progEl = document.getElementById('trans-progress');
+                                    if (progEl) progEl.style.display = 'block';
+                                    const pct = Math.round(progress.progress || 0);
+                                    bar.style.width = pct + '%';
+                                    if (status) {
+                                        if (pct < 5) {
+                                            status.textContent = '⏳ Conectando con CDN de modelos...';
+                                        } else {
+                                            status.textContent = `⏳ Descargando modelo Whisper Tiny (~42MB)... ${pct}%`;
+                                        }
                                     }
                                 }
-                            }
-                            if (progress.status === 'done' && progress.file) {
-                                if (status) status.textContent = '✅ Modelo cargado. Procesando audio...';
+                                if (progress.status === 'done' && progress.file) {
+                                    if (status) status.textContent = '✅ Modelo cargado. Listo para transcribir.';
+                                    window._transcriberReady = true;
+                                }
                             }
                         }
-                    }
-                );
+                    );
+                } catch (e) {
+                    console.error('Error cargando transcriber:', e);
+                    window._transcriberReady = false;
+                }
             }
             return window._transcriberPipeline;
         }
+
+        // ═══ Precarga del modelo al iniciar la página ═══
+        window.addEventListener('load', async () => {
+            try {
+                await getTranscriber();
+            } catch (e) {
+                console.warn('No se pudo precargar el modelo Whisper:', e);
+            }
+        });
 
         // ═══════════════════════════════════════════════════════
         // Extraer sección de un AudioBuffer
@@ -2195,6 +2211,7 @@
 
         window._transcribeWithWhisper = async function (audioFile, lang, mediaStart, duration) {
             const transcriber = await getTranscriber();
+            if (!transcriber) throw new Error('Transcriber no disponible');
 
             // ═══ Decodificar el audio a Float32Array con Web Audio API ═══
             const arrayBuffer = await audioFile.arrayBuffer();
@@ -2206,7 +2223,6 @@
                 // Si se especifican mediaStart y duration, extraer solo esa sección
                 let workingBuffer = fullBuffer;
                 if (typeof mediaStart === 'number' && typeof duration === 'number' && duration > 0) {
-                    // Remuestrear a 16kHz y extraer sección
                     const originalSampleRate = fullBuffer.sampleRate;
                     const sourceSampleStart = Math.floor(mediaStart * originalSampleRate);
                     const sourceSampleDuration = Math.floor(duration * originalSampleRate);
@@ -2229,10 +2245,13 @@
                 await tempCtx.close();
             }
 
+            // ═══ Transcribir con soporte para audio > 30 segundos ═══
             const result = await transcriber(audioData, {
                 language: lang || 'es',
                 task: 'transcribe',
                 return_timestamps: true,
+                chunk_length_s: 30,        // ✅ Procesar en chunks de 30s
+                stride_length_s: [10, 5],  // ✅ Overlap para mejor continuidad
             });
 
             return {
@@ -2572,6 +2591,11 @@
             if (S.transcribing) {
                 toast('Ya hay una transcripción en progreso', 'warn');
                 return;
+            }
+
+            // Si el modelo aún no está listo, esperamos o avisamos
+            if (!window._transcriberReady && !window._transcriberPipeline) {
+                toast('Cargando modelo Whisper Tiny (~42MB)... Será rápido la próxima vez.', 'info');
             }
 
             S.transcribing = true;
@@ -3519,13 +3543,32 @@
                     if (S.selEvs.size && !S.selEvs.has(ev.id)) return;
                     if (cursorTime > ev.startTime + 0.05 && cursorTime < ev.startTime + ev.duration - 0.05) {
                         const d1 = cursorTime - ev.startTime;
+                        const origMediaStart = ev.mediaStart || 0;
+                        
+                        // SEGUNDO BLOQUE (NUEVA PARTE - derecha)
                         const ne = {
-                            ...ev, id: nid('event'), startTime: cursorTime, duration: ev.duration - d1,
-                            fadeIn: 0, fadeOut: 0,
-                            mediaStart: (ev.mediaStart || 0) + d1, transcription: null, showTranscript: false
+                            id: nid('event'),
+                            name: ev.name,
+                            url: ev.url,
+                            mediaType: ev.mediaType,
+                            startTime: cursorTime,
+                            duration: ev.duration - d1,
+                            mediaStart: origMediaStart + d1,  // ✅ CLAVE: offset correcto en el archivo
+                            vol: ev.vol,
+                            pan: ev.pan,
+                            muted: ev.muted,
+                            fadeIn: 0,
+                            fadeOut: 0,
+                            transcription: null,
+                            showTranscript: false
                         };
-                        ev.duration = d1; ev.fadeOut = 0;
-                        if (ev.fadeIn > d1) ev.fadeIn = d1; adds.push(ne);
+                        
+                        // PRIMER BLOQUE (PARTE ORIGINAL - izquierda)
+                        ev.duration = d1;
+                        ev.fadeOut = 0;
+                        if (ev.fadeIn > d1) ev.fadeIn = d1;
+                        
+                        adds.push(ne);
                         n++;
                     }
                 });
