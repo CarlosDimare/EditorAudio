@@ -3563,10 +3563,34 @@
                             showTranscript: false
                         };
                         
+                        // Dividir transcripción para la nueva parte derecha
+                        if (ev.transcription && ev.transcription.words) {
+                            const rightWords = ev.transcription.words.filter(w => w.start >= d1).map(w => ({
+                                word: w.word,
+                                start: w.start - d1,
+                                end: w.end - d1
+                            }));
+                            ne.transcription = {
+                                text: rightWords.map(w => w.word).join(' '),
+                                words: rightWords,
+                                lang: ev.transcription.lang
+                            };
+                        }
+                        
                         // PRIMER BLOQUE (PARTE ORIGINAL - izquierda)
                         ev.duration = d1;
                         ev.fadeOut = 0;
                         if (ev.fadeIn > d1) ev.fadeIn = d1;
+                        
+                        // Dividir transcripción si existe
+                        if (ev.transcription && ev.transcription.words) {
+                            const leftWords = ev.transcription.words.filter(w => w.end <= d1);
+                            ev.transcription = {
+                                text: leftWords.map(w => w.word).join(' '),
+                                words: leftWords,
+                                lang: ev.transcription.lang
+                            };
+                        }
                         
                         adds.push(ne);
                         n++;
